@@ -55,7 +55,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.RequestStatus
-import com.example.data.model.TaskTemporalClass
 import com.example.data.model.User
 import com.example.data.model.UserType
 import com.example.ui.theme.AmanDarkSlate
@@ -677,59 +676,6 @@ fun RequestStatusPill(
         )
         RequestStatus.REJECTED -> Quintuple(
             StatusRejectedDot, StatusRejectedBg, StatusRejectedText, StatusRejectedBorder, "مرفوض"
-        )
-    }
-
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = bgColor,
-        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
-        modifier = modifier
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
-            )
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = textColor
-            )
-        }
-    }
-}
-
-@Composable
-fun TaskStatusPill(
-    status: TaskTemporalClass,
-    modifier: Modifier = Modifier
-) {
-    val (dotColor, bgColor, textColor, borderColor, label) = when (status) {
-        TaskTemporalClass.TODAY -> Quintuple(
-            Color(0xFFDC2626), Color(0xFFFEF2F2), Color(0xFFDC2626), Color(0xFFFECACA), "اليوم"
-        )
-        TaskTemporalClass.DUE_SOON -> Quintuple(
-            Color(0xFFD97706), Color(0xFFFFFBEB), Color(0xFFB45309), Color(0xFFFDE68A), "قريبة الاستحقاق"
-        )
-        TaskTemporalClass.UPCOMING -> Quintuple(
-            Color(0xFF0284C7), Color(0xFFF0F9FF), Color(0xFF0369A1), Color(0xFFBAE6FD), "قادمة"
-        )
-        TaskTemporalClass.OVERDUE -> Quintuple(
-            Color(0xFFB91C1C), Color(0xFFFEF2F2), Color(0xFF991B1B), Color(0xFFFECACA), "متأخرة"
-        )
-        TaskTemporalClass.DUE -> Quintuple(
-            Color(0xFF64748B), Color(0xFFF8FAFC), Color(0xFF475569), Color(0xFFCBD5E1), "مستحقة"
-        )
-        TaskTemporalClass.COMPLETED -> Quintuple(
-            StatusActiveDot, StatusActiveBg, StatusActiveText, StatusActiveBorder, "تم السداد"
         )
     }
 

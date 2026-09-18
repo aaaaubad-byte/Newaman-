@@ -80,9 +80,7 @@ import com.example.data.model.RequestStatus
 import com.example.data.model.SystemSettings
 import com.example.data.model.TaskStatus
 import com.example.data.model.TaskClassification
-import com.example.data.model.TaskTemporalClass
 import com.example.data.model.TelecomProvider
-import com.example.data.model.classifyTaskStatus
 import com.example.data.model.User
 import com.example.data.model.UserType
 import java.text.SimpleDateFormat
@@ -102,7 +100,6 @@ import com.example.ui.components.SearchAndFilterBar
 import com.example.ui.components.StatCard
 
 import com.example.ui.components.StoppedStatusBadge
-import com.example.ui.components.TaskStatusPill
 import com.example.ui.components.TrustBadgesFooter
 import com.example.ui.theme.AmanBgLight
 import com.example.ui.theme.AmanDarkSlate
@@ -153,24 +150,16 @@ fun AdminOverviewScreen(
     val requests by viewModel.protectionRequests.collectAsState()
     val notificationSettings by viewModel.notificationSettings.collectAsState()
     val paymentTasks by viewModel.paymentTasks.collectAsState()
-    val taskSettings by viewModel.taskSettings.collectAsState()
-    val taskClassifications by viewModel.taskClassifications.collectAsState()
 
     val pendingRequests = requests.count { it.status == RequestStatus.PENDING }
     val renewalWindow = notificationSettings.firstOrNull { it.type == "renewal_needed" }?.daysBefore
     val renewalNeeded = if (renewalWindow != null) protections.count { it.status == "active" && it.daysRemaining <= renewalWindow } else 0
     val unreadNotifications = viewModel.notifications.collectAsState().value.count { !it.isRead }
-    fun upcomingDaysFor(providerId: String): Int {
-        val settingsId = taskSettings.firstOrNull { it.providerId == providerId }?.id ?: return 0
-        return taskClassifications.filter { it.taskSettingsId == settingsId && it.isActive }
-            .mapNotNull { it.maxDaysRemaining }.maxOrNull() ?: 0
-    }
-    val todayTasks = paymentTasks.count { classifyTaskStatus(it, upcomingDaysFor(it.providerId)) == TaskTemporalClass.TODAY }
-    val overdueTasks = paymentTasks.count { classifyTaskStatus(it, upcomingDaysFor(it.providerId)) == TaskTemporalClass.OVERDUE }
-    val upcomingTasks = paymentTasks.count {
-        val status = classifyTaskStatus(it, upcomingDaysFor(it.providerId))
-        status == TaskTemporalClass.UPCOMING || status == TaskTemporalClass.DUE_SOON
-    }
+    val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
+    val visibleOpenTasks = paymentTasks.filter { it.status != TaskStatus.COMPLETED }
+    val todayTasks = visibleOpenTasks.count { it.dueDate.take(10) == today }
+    val overdueTasks = visibleOpenTasks.count { it.dueDate.take(10) < today }
+    val upcomingTasks = visibleOpenTasks.count { it.dueDate.take(10) > today }
 
     Column(
         modifier = modifier
@@ -326,8 +315,8 @@ private fun TaskSummaryCard(
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallSummaryCard("اليوم", today.toString(), Modifier.weight(1f))
-                SmallSummaryCard("متأخرة", overdue.toString(), Modifier.weight(1f))
-                SmallSummaryCard("قادمة", upcoming.toString(), Modifier.weight(1f))
+                SmallSummaryCard("بعد الموعد", overdue.toString(), Modifier.weight(1f))
+                SmallSummaryCard("ضمن نافذة الظهور", upcoming.toString(), Modifier.weight(1f))
             }
             Text("فتح قائمة المهام ←", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AmanTealDark)
         }
@@ -666,7 +655,14 @@ fun AdminPaymentTasksScreen(
         Text("المهام الدورية (${filtered.size})", fontSize = 17.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(12.dp))
 
-        OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, label = { Text("بحث برقم الهاتف أو الشركة") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        SearchAndDropdownFilterBar(
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            selectedFilter = providerFilter,
+            filterOptions = providerOptions,
+            onFilterSelected = { providerFilter = it },
+            placeholderText = "بحث برقم الهاتف أو الشركة"
+        )
         Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             listOf("غير مكتملة", "مكتملة", "الكل").forEach { tab ->
@@ -674,7 +670,6 @@ fun AdminPaymentTasksScreen(
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(value = providerFilter, onValueChange = {}, readOnly = true, label = { Text("الشركة") }, modifier = Modifier.fillMaxWidth().clickable { providerFilter = if (providerFilter == "كل الشركات") providerOptions.drop(1).firstOrNull() ?: "كل الشركات" else "كل الشركات" })
         Spacer(modifier = Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             OutlinedTextField(value = dateFrom, onValueChange = { dateFrom = it }, label = { Text("من: YYYY-MM-DD") }, singleLine = true, modifier = Modifier.weight(1f))

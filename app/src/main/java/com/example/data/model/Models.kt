@@ -166,33 +166,6 @@ enum class TaskStatus(val value: String, val titleAr: String) {
     COMPLETED("completed", "مكتملة")
 }
 
-enum class TaskTemporalClass {
-    UPCOMING, DUE_SOON, TODAY, OVERDUE, DUE, COMPLETED
-}
-
-/**
- * تصنيف عرض المهمة يُحسب داخل التطبيق من تاريخ الاستحقاق.
- * الحالات النهائية (مكتملة/ملغاة) تبقى كما سُجلت، بينما الحالات الزمنية
- * لا تعتمد على قيمة status المخزنة القديمة.
- */
-fun classifyTaskStatus(task: PaymentTask, upcomingDays: Int = 7, today: String =
-    SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
-): TaskTemporalClass {
-    if (task.status == TaskStatus.COMPLETED) return TaskTemporalClass.COMPLETED
-    val diff = try {
-        val format = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH)
-        val due = format.parse(task.dueDate) ?: return TaskTemporalClass.DUE
-        val current = format.parse(today) ?: return TaskTemporalClass.DUE
-        ((due.time - current.time) / (1000L * 60L * 60L * 24L)).toInt()
-    } catch (_: Exception) { return TaskTemporalClass.DUE }
-    return when {
-        diff < 0 -> TaskTemporalClass.OVERDUE
-        diff == 0 -> TaskTemporalClass.TODAY
-        diff <= upcomingDays.coerceAtLeast(0) -> TaskTemporalClass.DUE_SOON
-        else -> TaskTemporalClass.UPCOMING
-    }
-}
-
 data class TaskSettings(
     val id: String,
     val providerId: String,
