@@ -1,0 +1,338 @@
+package com.example.data.model
+
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
+
+enum class UserType {
+    CUSTOMER,
+    ADMIN
+}
+
+enum class AdminRole(val code: String, val titleAr: String) {
+    SUPER_ADMIN("super_admin", "Super Admin"),
+    FINANCE_OFFICER("finance_officer", "Finance Officer"),
+    OPERATIONS_OFFICER("operations_officer", "Operations Officer"),
+    SUPPORT("support", "Support");
+    companion object {
+        fun fromCode(code: String?): AdminRole? {
+            val normalized = code?.trim()?.lowercase()?.replace(" ", "_")?.replace("-", "_")
+            return entries.firstOrNull { it.code == normalized }
+        }
+    }
+}
+
+
+data class User(
+    val id: String = UUID.randomUUID().toString(),
+    val email: String = "",
+    val fullName: String,
+    val phone: String? = null,
+    val userType: UserType = UserType.CUSTOMER,
+    val role: AdminRole? = null,
+    val status: String = "active"
+)
+
+data class TelecomProvider(
+    val id: String,
+    val nameAr: String,
+    val nameEn: String,
+    val code: String,
+    val prefixes: List<String>,
+    val numberLength: Int = 9,
+    val primaryColorHex: Long = 0xFF00695C,
+    val isActive: Boolean = true,
+    val sortOrder: Int = 0
+)
+
+data class ProtectionPackage(
+    val id: String,
+    val providerId: String,
+    val name: String,
+    val durationDays: Int,
+    val price: Double,
+    val currency: String,
+    val isActive: Boolean = true,
+    val sortOrder: Int = 0
+)
+
+data class PaymentWallet(
+    val id: String,
+    val nameAr: String,
+    val nameEn: String,
+    val code: String,
+    val beneficiaryAccount: String,
+    val beneficiaryName: String,
+    val instructionsAr: String,
+    val isActive: Boolean = true,
+    val sortOrder: Int = 0
+)
+
+data class CustomerNumber(
+    val id: String = UUID.randomUUID().toString(),
+    val customerId: String,
+    val phoneNumber: String,
+    val providerId: String,
+    val providerNameAr: String,
+    val status: String = "active",
+    val isProtected: Boolean = false,
+    val createdAt: String = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
+)
+
+enum class RequestStatus(val value: String, val titleAr: String) {
+    PENDING("pending", "قيد المراجعة"),
+    APPROVED("approved", "مقبول"),
+    REJECTED("rejected", "مرفوض")
+}
+
+data class ProtectionRequest(
+    val id: String = UUID.randomUUID().toString(),
+    val customerId: String,
+    val customerName: String,
+    val numberId: String,
+    val phoneNumber: String,
+    val providerId: String,
+    val providerNameAr: String,
+    val walletId: String,
+    val walletNameAr: String,
+    val paymentReference: String,
+    val priceSnapshot: Double,
+    val durationDaysSnapshot: Int,
+    val currencySnapshot: String = "YER",
+    val paymentStatus: String = "pending",
+    val requestType: String = "new",
+    val previousProtectionId: String? = null,
+    val status: RequestStatus = RequestStatus.PENDING,
+    val rejectionReason: String? = null,
+    val verifiedAt: String? = null,
+    val createdAt: String = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
+)
+
+data class Protection(
+    val id: String = UUID.randomUUID().toString(),
+    val requestId: String,
+    val customerId: String,
+    val numberId: String,
+    val phoneNumber: String,
+    val providerNameAr: String,
+    val status: String = "active",
+    val startDate: String,
+    val endDate: String,
+    val durationDaysSnapshot: Int,
+    val priceSnapshot: Double
+) {
+    // Dynamic remaining days calculation as specified in the business rules (never fixed)
+    val daysRemaining: Int
+        get() = calculateDaysRemaining(endDate)
+
+    companion object {
+        fun calculateDaysRemaining(endDateStr: String): Int {
+            return try {
+                val format = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH)
+                val endDate = format.parse(endDateStr) ?: return 0
+                val now = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.time
+                val diffMs = endDate.time - now.time
+                val days = (diffMs / (1000 * 60 * 60 * 24)).toInt()
+                if (days < 0) 0 else days
+            } catch (e: Exception) {
+                0
+            }
+        }
+    }
+}
+
+data class Subscription(
+    val id: String,
+    val customerId: String,
+    val protectedPhoneId: String,
+    val startDate: String,
+    val endDate: String,
+    val durationDaysSnapshot: Int,
+    val priceSnapshot: Double,
+    val currencySnapshot: String,
+    val status: String = "active",
+    val createdAt: String = ""
+)
+
+enum class TaskStatus(val value: String, val titleAr: String) {
+    DUE("due", "مستحقة"),
+    COMPLETED("completed", "مكتملة")
+}
+
+enum class TaskTemporalClass {
+    UPCOMING, DUE_SOON, TODAY, OVERDUE, DUE, COMPLETED
+}
+
+/**
+ * تصنيف عرض المهمة يُحسب داخل التطبيق من تاريخ الاستحقاق.
+ * الحالات النهائية (مكتملة/ملغاة) تبقى كما سُجلت، بينما الحالات الزمنية
+ * لا تعتمد على قيمة status المخزنة القديمة.
+ */
+fun classifyTaskStatus(task: PaymentTask, upcomingDays: Int = 7, today: String =
+    SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
+): TaskTemporalClass {
+    if (task.status == TaskStatus.COMPLETED) return TaskTemporalClass.COMPLETED
+    val diff = try {
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH)
+        val due = format.parse(task.dueDate) ?: return TaskTemporalClass.DUE
+        val current = format.parse(today) ?: return TaskTemporalClass.DUE
+        ((due.time - current.time) / (1000L * 60L * 60L * 24L)).toInt()
+    } catch (_: Exception) { return TaskTemporalClass.DUE }
+    return when {
+        diff < 0 -> TaskTemporalClass.OVERDUE
+        diff == 0 -> TaskTemporalClass.TODAY
+        diff <= upcomingDays.coerceAtLeast(0) -> TaskTemporalClass.DUE_SOON
+        else -> TaskTemporalClass.UPCOMING
+    }
+}
+
+data class TaskSettings(
+    val id: String,
+    val providerId: String,
+    val firstTaskEnabled: Boolean,
+    val manualRescheduleEnabled: Boolean,
+    val intervalDays: Int?,
+    val isActive: Boolean,
+    val visibilityDaysBefore: Int = 30
+)
+
+data class TaskClassification(
+    val id:String, val taskSettingsId:String, val name:String, val minDaysRemaining:Int?, val maxDaysRemaining:Int?, val sortOrder:Int, val isActive:Boolean
+)
+
+data class NotificationSetting(
+    val id: String,
+    val type: String,
+    val recipient: String,
+    val enabled: Boolean,
+    val daysBefore: Int?
+)
+
+data class EmployeeAccount(
+    val id: String,
+    val fullName: String,
+    val email: String,
+    val status: String,
+    val roleId: String?,
+    val roleName: String?
+)
+
+data class PaymentTask(
+    val id: String = UUID.randomUUID().toString(),
+    val protectionId: String,
+    val numberId: String,
+    val phoneNumber: String,
+    val providerId: String,
+    val providerNameAr: String,
+    val cycleNumber: Int = 1,
+    val dueDate: String,
+    val amountSnapshot: Double,
+    val status: TaskStatus = TaskStatus.DUE,
+    val completedAt: String? = null,
+    val paymentReference: String? = null,
+    val notes: String? = null,
+    val taskType: String = "recurring",
+    val telecomDueAt: String? = null,
+    val daysRemaining: Int? = null,
+    val classificationName: String? = null
+)
+
+data class FinancialTransaction(
+    val id: String = UUID.randomUUID().toString(),
+    val type: String, // "income" or "expense"
+    val amount: Double,
+    val currency: String = "YER",
+    val descriptionAr: String,
+    val reference: String? = null,
+    val relatedEntityType: String? = null,
+    val relatedEntityId: String? = null,
+    val createdAt: String = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
+)
+
+data class FinancialSummary(
+    val totalIncome: Double = 0.0,
+    val totalExpense: Double = 0.0,
+    val netBalance: Double = 0.0,
+    val currency: String = "YER"
+)
+
+data class AuditLog(
+    val id: String = UUID.randomUUID().toString(),
+    val action: String,
+    val entityType: String,
+    val entityId: String? = null,
+    val performedByRole: String,
+    val performedByName: String = "",
+    val details: String,
+    val createdAt: String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ENGLISH).format(Date()),
+    val beforeData: String? = null,
+    val afterData: String? = null,
+    val metadata: String? = null
+)
+
+data class StateTransitionLog(
+    val id: String = UUID.randomUUID().toString(),
+    val entityType: String,
+    val entityId: String,
+    val fromState: String,
+    val toState: String,
+    val actorId: String,
+    val actorRole: String,
+    val reason: String? = null,
+    val createdAt: String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ENGLISH).format(Date())
+)
+
+data class NotificationItem(
+    val id: String = UUID.randomUUID().toString(),
+    val recipientId: String? = null,
+    val titleAr: String,
+    val bodyAr: String,
+    val isRead: Boolean = false,
+    val createdAt: String = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date()),
+    val actionRoute: String? = null,
+    val type: String = "",
+    val relatedType: String? = null,
+    val relatedId: String? = null
+)
+
+data class Role(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val isActive: Boolean = true,
+    val permissionCodes: List<String> = emptyList(),
+    val assignedEmployees: Int = 0
+)
+
+data class PermissionItem(
+    val id: String,
+    val code: String,
+    val name: String,
+    val description: String? = null
+)
+
+data class CustomerAccount(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val email: String,
+    val phone: String,
+    val isSuspended: Boolean = false,
+    val registeredNumbersCount: Int = 0,
+    val activeProtectionsCount: Int = 0,
+    val createdAt: String = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
+)
+
+data class SystemSettings(
+    val currency: String = "YER",
+    val timezone: String = "Asia/Aden",
+    val dateFormat: String = "yyyy-MM-dd",
+    val timeFormat: String = "24h",
+    val maintenanceMode: Boolean = false
+)
