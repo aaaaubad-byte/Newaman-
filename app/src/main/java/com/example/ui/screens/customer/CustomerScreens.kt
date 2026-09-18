@@ -1394,10 +1394,10 @@ fun CustomerAccountScreen(
     }
     if(editing){
         var name by remember(user?.fullName){mutableStateOf(user?.fullName.orEmpty())}
-        var phone by remember(user?.phone){mutableStateOf(user?.phone.orEmpty())}
+        var email by remember(user?.email){mutableStateOf(user?.email.orEmpty())}
         AlertDialog(onDismissRequest={editing=false},title={Text("تعديل الحساب")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
             OutlinedTextField(name,{name=it},label={Text("الاسم الكامل")},singleLine=true,modifier=Modifier.fillMaxWidth())
-            OutlinedTextField(phone,{phone=it.filter(Char::isDigit)},label={Text("رقم الهاتف (اختياري)")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Phone),modifier=Modifier.fillMaxWidth())
-        }},confirmButton={Button(onClick={viewModel.updateMyProfile(name,phone){editing=false}},colors=ButtonDefaults.buttonColors(containerColor=AmanTealDark)){Text("حفظ",color=Color.White)}},dismissButton={TextButton(onClick={editing=false}){Text("إلغاء")}})
+            OutlinedTextField(email,{email=it},label={Text("البريد الإلكتروني (اختياري)")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Email),modifier=Modifier.fillMaxWidth())
+        }},confirmButton={Button(onClick={viewModel.updateMyProfile(name,email){editing=false}},colors=ButtonDefaults.buttonColors(containerColor=AmanTealDark)){Text("حفظ",color=Color.White)}},dismissButton={TextButton(onClick={editing=false}){Text("إلغاء")}})
     }
 }

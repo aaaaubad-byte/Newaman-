@@ -231,9 +231,9 @@ object SupabaseClient {
         }
     }
 
-    suspend fun updateMyProfile(name: String, phone: String?, token: String? = null): NetworkResult<Unit> = withContext(Dispatchers.IO) {
+    suspend fun updateMyProfile(name: String, email: String?, token: String? = null): NetworkResult<Unit> = withContext(Dispatchers.IO) {
         try {
-            val body = JSONObject().apply { put("p_full_name", name.trim()); put("p_phone", phone?.trim()?.ifBlank { null } ?: JSONObject.NULL) }
+            val body = JSONObject().apply { put("p_full_name", name.trim()); put("p_email", email?.trim()?.ifBlank { null } ?: JSONObject.NULL) }
             val response = rest("POST", "/rest/v1/rpc/update_my_profile", body, token)
             if (response.successful) NetworkResult.Success(Unit) else errorResult(response, "تعذر حفظ بيانات الحساب")
         } catch (e: IOException) { NetworkResult.NetworkFailure(e) } catch (_: Exception) { NetworkResult.Unknown("تعذر حفظ بيانات الحساب") }

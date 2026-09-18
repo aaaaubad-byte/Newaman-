@@ -416,9 +416,9 @@ class AmanViewModel : ViewModel() {
         }
     }
 
-    fun completePaymentTask(taskId: String, reference: String, notes: String? = null) {
+    fun completePaymentTask(taskId: String, notes: String? = null) {
         viewModelScope.launch {
-            val result = AmanRepository.completePaymentTask(taskId, reference, notes)
+            val result = AmanRepository.completePaymentTask(taskId, notes)
             result.onSuccess {
                 _uiMessage.value = UiMessage("تم تأكيد سداد المهمة وتسجيل المصروف التشغيلي بنجاح")
             }.onFailure {
@@ -467,7 +467,7 @@ class AmanViewModel : ViewModel() {
     fun setEmployeeRole(userId:String,roleId:String) { viewModelScope.launch { AmanRepository.setEmployeeRole(userId,roleId).onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل تغيير الدور",true) } } }
     fun setEmployeeStatus(userId:String,status:String) { viewModelScope.launch { AmanRepository.setEmployeeStatus(userId,status).onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل تغيير الحالة",true) } } }
     fun replaceRolePermissions(roleId:String, permissionCodes:List<String>) { viewModelScope.launch { AmanRepository.replaceRolePermissions(roleId, permissionCodes).onSuccess { _uiMessage.value=UiMessage("تم حفظ صلاحيات الدور وتسجيل العملية") }.onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل حفظ الصلاحيات",true) } } }
-    fun updateMyProfile(name:String,phone:String?,onSuccess:()->Unit={}) { viewModelScope.launch { AmanRepository.updateMyProfile(name,phone).onSuccess { _uiMessage.value=UiMessage("تم حفظ بيانات الحساب"); onSuccess() }.onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل حفظ بيانات الحساب",true) } } }
+    fun updateMyProfile(name:String,email:String?,onSuccess:()->Unit={}) { viewModelScope.launch { AmanRepository.updateMyProfile(name,email).onSuccess { _uiMessage.value=UiMessage("تم حفظ بيانات الحساب"); onSuccess() }.onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل حفظ بيانات الحساب",true) } } }
 
     fun markNotificationAsRead(id: String) {
         viewModelScope.launch { AmanRepository.markNotificationAsRead(id) }

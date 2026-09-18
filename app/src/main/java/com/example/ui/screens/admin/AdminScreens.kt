@@ -782,7 +782,6 @@ fun AdminPaymentTasksScreen(
 
     // Complete Task Dialog
     selectedTaskToComplete?.let { task ->
-        var telcoReference by remember { mutableStateOf("") }
         var taskNotes by remember { mutableStateOf("") }
 
         AlertDialog(
@@ -793,13 +792,7 @@ fun AdminPaymentTasksScreen(
                     Text("الرقم: ${task.phoneNumber} (${task.providerNameAr})")
                     Text("المبلغ المطلوب للشبكة: ${task.amountSnapshot} ريال يمني", fontWeight = FontWeight.Bold, color = Color(0xFFDC2626))
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("رقم العملية / مرجع السداد لدى شركة الاتصالات:", fontSize = 12.sp, color = TextSecondary)
-                    OutlinedTextField(
-                        value = telcoReference,
-                        onValueChange = { telcoReference = it },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    Text("سيتم تسجيل مبلغ المهمة المعروف بالنظام تلقائياً.", fontSize = 12.sp, color = TextSecondary)
                     OutlinedTextField(
                         value = taskNotes,
                         onValueChange = { taskNotes = it },
@@ -812,10 +805,9 @@ fun AdminPaymentTasksScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.completePaymentTask(task.id, telcoReference, taskNotes)
+                        viewModel.completePaymentTask(task.id, taskNotes)
                         selectedTaskToComplete = null
                     },
-                    enabled = telcoReference.trim().isNotEmpty(),
                     colors = ButtonDefaults.buttonColors(containerColor = AmanTealDark)
                 ) {
                     Text("تأكيد السداد وقيد المصروف", color = Color.White)

@@ -4,6 +4,8 @@
 
 AMAN is an Arabic RTL Android application for customer number management, protection requests, telecom protection packages, payment-method tracking, administration, and scheduled payment tasks. The current implementation uses Jetpack Compose and communicates with Supabase through HTTPS REST and RPC calls. The Android client uses only the Supabase URL and anonymous/publishable key; service-role keys and database passwords are prohibited.
 
+The production source of truth for this reference is Supabase project `ilhgwludktlktzwxryhs` (New aman). The live RPC contracts use `p_full_name`/`p_email` for `update_my_profile`, `p_wallet_id`/`p_transfer_ref` for renewal and rejected-request submissions, and `p_new_due_date` for task rescheduling. Manager task completion uses `complete_payment_task(p_task_id uuid)` without a telecom reference. The live `admin_notifications` table uses `title`, `message`, `related_entity_type`, and `related_entity_id`; it has no employee-specific `admin_id` or `read_at` columns.
+
 The current task model is provider-scoped. Adding a customer number does not create an administrative task. The first task is created only after an administrator approves a protection request. After that task is completed, the next recurring task is created using the interval configured for the number's telecom provider. Time classifications are notifications/work queues for administrators: they make approaching payment dates visible without requiring a telecom-provider API.
 
 The current project does **not** implement a health-region or wage-type data model. No table, model, RPC, query, or screen for “health region by wage type” exists in this version.
@@ -199,7 +201,7 @@ Each active provider has a `task_settings` row with its own `default_interval_da
 Protection approved
 → initial_activation due now
 → Administrator performs external payment
-→ Administrator records reference and completes task
+→ Administrator completes task using the system-known amount
 → recurring task due after provider interval
 → task enters configured time window
 → classification changes dynamically as due date approaches
@@ -284,13 +286,13 @@ admin_set_user_role
 admin_set_user_status
 ```
 
-The authoritative SQL reference is:
+The current live-schema reference is:
 
 ```text
-DATABASE_REFERENCE_CURRENT.sql
+DATABASE_CURRENT_STRUCTURE.csv
 ```
 
-It combines the base project schema and the task-model V2 migration.
+It is a snapshot/reference of the current production schema; it must not be used to recreate an older schema.
 
 ## 9. Data isolation and security
 
