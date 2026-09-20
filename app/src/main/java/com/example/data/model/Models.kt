@@ -44,7 +44,9 @@ data class TelecomProvider(
     val numberLength: Int = 9,
     val primaryColorHex: Long = 0xFF00695C,
     val isActive: Boolean = true,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val isVisibleToCustomer: Boolean = true,
+    val logoUrl: String? = null
 )
 
 data class ProtectionPackage(
@@ -55,7 +57,9 @@ data class ProtectionPackage(
     val price: Double,
     val currency: String,
     val isActive: Boolean = true,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val description: String? = null,
+    val isVisibleToCustomer: Boolean = true
 )
 
 data class PaymentWallet(

@@ -83,14 +83,18 @@ object AmanRepository {
     }
 
     private suspend fun loadCatalog(userType: UserType) {
-        val providers = SupabaseClient.get("telecom_providers", mapOf("select" to "*", "order" to "sort_order.asc"), token()).getOrNull()
+        val providerQuery = mutableMapOf("select" to "*", "order" to "sort_order.asc")
+        if (userType == UserType.CUSTOMER) providerQuery["is_visible_to_customer"] = "eq.true"
+        val providers = SupabaseClient.get("telecom_providers", providerQuery, token()).getOrNull()
         if (providers != null) {
             val prefixRows = SupabaseClient.get("provider_prefixes", mapOf("select" to "*", "is_active" to "eq.true"), token()).getOrNull() ?: JSONArray()
             _telecomProviders.value = providers.toProviderList(prefixRows)
         }
         val methods = SupabaseClient.get("payment_methods", mapOf("select" to "*", "order" to "sort_order.asc", "is_active" to "eq.true"), token()).getOrNull()
         if (methods != null) _paymentWallets.value = methods.toPaymentMethodList()
-        val packages = SupabaseClient.get("packages", mapOf("select" to "*", "order" to "sort_order.asc", "is_active" to "eq.true"), token()).getOrNull()
+        val packageQuery = mutableMapOf("select" to "*", "order" to "sort_order.asc", "is_active" to "eq.true")
+        if (userType == UserType.CUSTOMER) packageQuery["is_visible_to_customer"] = "eq.true"
+        val packages = SupabaseClient.get("packages", packageQuery, token()).getOrNull()
         if (packages != null) _packages.value = packages.toPackageList()
 
         if (userType == UserType.ADMIN) {
@@ -336,9 +340,9 @@ object AmanRepository {
         val pref = List(prefixRows.length()) { x -> prefixRows.optJSONObject(x) }
             .filter { it?.optString("provider_id") == id }
             .mapNotNull { it?.optString("prefix")?.ifBlank { null } }
-        TelecomProvider(id, nameAr, nameEn, j.text("code"), pref, j.optInt("number_length", 9), 0xFF00695C, j.optBoolean("is_active", true), j.optInt("sort_order", 0))
+        TelecomProvider(id, nameAr, nameEn, j.text("code"), pref, j.optInt("number_length", 9), 0xFF00695C, j.optBoolean("is_active", true), j.optInt("sort_order", 0), j.optBoolean("is_visible_to_customer", true), j.optString("logo_url").ifBlank { null })
     }
-    private fun JSONArray.toPackageList()=safeMap { j ->ProtectionPackage(j.getString("id"),j.getString("provider_id"),j.text("name"),j.optInt("duration_days"),j.optDouble("price"),j.optString("currency").ifBlank { "YER" },j.optBoolean("is_active",true),j.optInt("sort_order",0))}
+    private fun JSONArray.toPackageList()=safeMap { j ->ProtectionPackage(j.getString("id"),j.getString("provider_id"),j.text("name"),j.optInt("duration_days"),j.optDouble("price"),j.optString("currency").ifBlank { "YER" },j.optBoolean("is_active",true),j.optInt("sort_order",0),j.optString("description").ifBlank { null },j.optBoolean("is_visible_to_customer",true))}
     private fun JSONArray.toPaymentMethodList()=safeMap { j ->PaymentWallet(j.getString("id"),j.text("name"),j.text("name"),j.text("type"),j.text("account_number"),j.optString("account_name").ifBlank { j.optString("recipient_name") },j.optString("instructions"),j.optBoolean("is_active",true),j.optInt("sort_order",0))}
     private fun JSONArray.toCustomerNumbers() = safeMap { j ->
         // customer_my_numbers uses the canonical view columns (number,
@@ -372,7 +376,7 @@ object AmanRepository {
     private fun JSONArray.toProtectionRequests()=safeMap { j ->
         val cn=j.obj("customer_numbers"); val pn=cn?.obj("phone_numbers"); val tp=pn?.obj("telecom_providers"); val pm=j.obj("payment_methods"); val pkg=j.obj("packages")
         val status=runCatching { RequestStatus.valueOf(j.optString("status","pending").substringBefore('_').uppercase()) }.getOrDefault(RequestStatus.PENDING)
-        ProtectionRequest(id=j.optString("id"),customerId=j.optString("customer_id").ifBlank { cn?.optString("customer_id").orEmpty() },customerName=j.optString("customer_name"),numberId=j.optString("customer_number_id").ifBlank { j.optString("phone_number_id") },phoneNumber=j.optString("phone_number").ifBlank { pn?.optString("number").orEmpty() },providerId=j.optString("provider_id").ifBlank { pn?.optString("provider_id").orEmpty() },providerNameAr=tp?.optString("name_ar").orEmpty().ifBlank { j.optString("provider_name_snapshot") },walletId=j.optString("payment_method_id"),walletNameAr=pm?.optString("name").orEmpty().ifBlank { j.optString("payment_method_name_snapshot") },paymentReference=j.optString("transfer_reference").ifBlank { j.optString("payment_reference") },priceSnapshot=j.optDouble("package_price_snapshot",pkg?.optDouble("price",0.0) ?: 0.0),durationDaysSnapshot=j.optInt("package_duration_days_snapshot",pkg?.optInt("duration_days",0) ?: 0),currencySnapshot=j.optString("package_currency_snapshot").ifBlank { "YER" },paymentStatus=j.optString("payment_status","pending"),requestType=j.optString("request_type","new"),previousProtectionId=j.optString("previous_protection_id").ifBlank{null},status=status,rejectionReason=j.optString("rejection_reason").ifBlank{null},verifiedAt=j.optString("reviewed_at").ifBlank { j.optString("payment_verified_at").ifBlank { null } },createdAt=j.date("created_at"))
+        ProtectionRequest(id=j.optString("id"),customerId=j.optString("customer_id").ifBlank { cn?.optString("customer_id").orEmpty() },customerName=j.optString("customer_name"),numberId=j.optString("customer_number_id").ifBlank { j.optString("phone_number_id") },phoneNumber=j.optString("phone_number").ifBlank { pn?.optString("number").orEmpty() },providerId=j.optString("provider_id").ifBlank { pn?.optString("provider_id").orEmpty() },providerNameAr=tp?.optString("name_ar").orEmpty().ifBlank { j.optString("provider_name_snapshot") },walletId=j.optString("payment_method_id"),walletNameAr=pm?.optString("name").orEmpty().ifBlank { j.optString("payment_method_name_snapshot") },paymentReference=j.optString("transfer_reference").ifBlank { j.optString("payment_reference") },priceSnapshot=j.optDouble("price_snapshot",j.optDouble("package_price_snapshot",pkg?.optDouble("price",0.0) ?: 0.0)),durationDaysSnapshot=j.optInt("duration_days_snapshot",j.optInt("package_duration_days_snapshot",pkg?.optInt("duration_days",0) ?: 0)),currencySnapshot=j.optString("currency_snapshot").ifBlank { j.optString("package_currency_snapshot").ifBlank { "YER" } },paymentStatus=j.optString("payment_status","pending"),requestType=j.optString("request_type","new"),previousProtectionId=j.optString("previous_protection_id").ifBlank{null},status=status,rejectionReason=j.optString("rejection_reason").ifBlank{null},verifiedAt=j.optString("reviewed_at").ifBlank { j.optString("payment_verified_at").ifBlank { null } },createdAt=j.date("created_at"))
     }
     private fun JSONArray.toProtections()=safeMap { j ->
         val cn=j.obj("customer_numbers"); val pn=cn?.obj("phone_numbers"); val tp=pn?.obj("telecom_providers"); val pkg=j.obj("packages")
