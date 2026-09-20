@@ -25,3 +25,7 @@
 تم التحقق من أن الحقول `is_visible_to_customer` و`description` كانت موجودة في الجداول، لكن RPC الإدارة القديمة لم تكن تحفظها. أضيفت migrations `202609202101_manage_catalog_visibility.sql` و`202609202102_fix_provider_name_en.sql` لتوسيع عقود `admin_upsert_provider` و`admin_upsert_package` مع معاملات افتراضية تحافظ على توافق الاستدعاءات القديمة، وتمنح `authenticated` التنفيذ فقط. كما حدّث Android لإرسال قيم الظهور والوصف والاحتفاظ بها عند تعديل الكتالوج.
 
 طُبقت المرحلتان على مشروع Supabase الحي بنجاح. أُصلح أيضًا حفظ الاسم الإنجليزي للشركة بحيث لا يُستبدل بالاسم العربي.
+
+## 2026-09-20 — Task amount settings UI
+
+تم التحقق من أن جدول `task_amount_settings` وRPC `admin_upsert_task_amount_setting` موجودان في قاعدة Supabase، لكن Android لم يكن يقرأ الإعدادات أو يوفر واجهة لحفظها. أضيف نموذج وتدفق Repository/ViewModel وحقلا مبلغ المهمة الأولى والمهمة الدورية داخل شاشة إعدادات التشغيل، مع حفظ كل قيمة حسب الشركة ونوع المهمة. تبقى القيمة المثبتة داخل `payment_tasks.amount_snapshot` عند إنشاء المهمة، ولا تعتمد على سعر الباقة.

@@ -51,6 +51,8 @@ object AmanRepository {
     val customers: StateFlow<List<CustomerAccount>> = _customers.asStateFlow()
     private val _taskSettings = MutableStateFlow<List<TaskSettings>>(emptyList())
     val taskSettings: StateFlow<List<TaskSettings>> = _taskSettings.asStateFlow()
+    private val _taskAmountSettings = MutableStateFlow<List<TaskAmountSetting>>(emptyList())
+    val taskAmountSettings: StateFlow<List<TaskAmountSetting>> = _taskAmountSettings.asStateFlow()
     private val _notificationSettings = MutableStateFlow<List<NotificationSetting>>(emptyList())
     private val _taskClassifications = MutableStateFlow<List<TaskClassification>>(emptyList())
     val taskClassifications: StateFlow<List<TaskClassification>> = _taskClassifications.asStateFlow()
@@ -147,6 +149,7 @@ object AmanRepository {
         _notifications.value = SupabaseClient.get("admin_notifications", mapOf("select" to "*", "order" to "created_at.desc"), token()).getOrNull()?.toNotifications() ?: emptyList()
         _auditLogs.value = SupabaseClient.get("audit_logs", mapOf("select" to "*", "order" to "created_at.desc"), token()).getOrNull()?.toAuditLogs() ?: emptyList()
         _taskSettings.value = SupabaseClient.get("task_settings", mapOf("select" to "*", "provider_id" to "not.is.null", "order" to "updated_at.asc"), token()).getOrNull()?.toTaskSettings() ?: emptyList()
+        _taskAmountSettings.value = SupabaseClient.get("task_amount_settings", mapOf("select" to "*", "order" to "task_type.asc"), token()).getOrNull()?.toTaskAmountSettings() ?: emptyList()
         _notificationSettings.value = SupabaseClient.get("notification_settings", mapOf("select" to "*", "order" to "type.asc"), token()).getOrNull()?.toNotificationSettings() ?: emptyList()
         val admins = SupabaseClient.get("users", mapOf("select" to "id,full_name,email,status,role_id,roles(name)", "user_type" to "eq.admin", "order" to "created_at.asc"), token()).getOrNull()
         _employees.value = admins?.toEmployees() ?: emptyList()
@@ -315,6 +318,7 @@ object AmanRepository {
     }
 
     suspend fun updateTaskSettings(providerId:String,firstTask:Boolean,reschedule:Boolean,intervalDays:Int?,visibilityDaysBefore:Int,active:Boolean):Result<Unit> = rpcUnit("admin_upsert_task_settings", JSONObject().apply { put("p_provider_id",providerId);put("p_first_task_enabled",firstTask);put("p_manual_reschedule_enabled",reschedule);put("p_interval_days",intervalDays ?: JSONObject.NULL);put("p_visibility_days_before",visibilityDaysBefore);put("p_is_active",active) })
+    suspend fun updateTaskAmountSetting(setting: TaskAmountSetting): Result<Unit> = rpcUnit("admin_upsert_task_amount_setting", JSONObject().apply { put("p_id", setting.id ?: JSONObject.NULL); put("p_provider_id", setting.providerId); put("p_task_type", setting.taskType); put("p_amount", setting.amount); put("p_currency", setting.currency.trim().ifBlank { "YER" }); put("p_is_active", setting.isActive) })
     suspend fun updateTaskClassification(id:String?,taskSettingsId:String,name:String,minDays:Int?,maxDays:Int?,sortOrder:Int,active:Boolean):Result<Unit> = rpcUnit("admin_upsert_task_classification",JSONObject().apply{put("p_id",id ?: JSONObject.NULL);put("p_task_settings_id",taskSettingsId);put("p_name",name.trim());put("p_min_days",minDays ?: JSONObject.NULL);put("p_max_days",maxDays ?: JSONObject.NULL);put("p_sort_order",sortOrder);put("p_is_active",active)})
 
     suspend fun updateNotificationSetting(setting:NotificationSetting):Result<Unit> = rpcUnit("admin_upsert_notification_setting", JSONObject().apply { put("p_id",setting.id);put("p_type",setting.type);put("p_recipient",setting.recipient);put("p_enabled",setting.enabled);put("p_days_before",setting.daysBefore ?: JSONObject.NULL) })
@@ -324,7 +328,7 @@ object AmanRepository {
 
     private suspend fun rpcUnit(name:String,body:JSONObject):Result<Unit> = when(val r=SupabaseClient.rpc(name,body,token())){is NetworkResult.Success->{refreshAll();Result.success(Unit)};is NetworkResult.Error->Result.failure(Exception(r.messageAr));is NetworkResult.NetworkFailure->Result.failure(Exception(r.messageAr));is NetworkResult.Unknown->Result.failure(Exception(r.messageAr))}
     fun detectProvider(phoneNumber:String):TelecomProvider?{val n=phoneNumber.filter(Char::isDigit);return _telecomProviders.value.firstOrNull{p->p.prefixes.any{n.startsWith(it)}}}
-    private fun clearData(){_customerNumbers.value=emptyList();_protectionRequests.value=emptyList();_protections.value=emptyList();_paymentTasks.value=emptyList();_transactions.value=emptyList();_notifications.value=emptyList();_auditLogs.value=emptyList();_stateTransitionLogs.value=emptyList();_customers.value=emptyList();_packages.value=emptyList();_taskSettings.value=emptyList();_notificationSettings.value=emptyList();_employees.value=emptyList();_roles.value=emptyList();_isBackendConnected.value=false}
+    private fun clearData(){_customerNumbers.value=emptyList();_protectionRequests.value=emptyList();_protections.value=emptyList();_paymentTasks.value=emptyList();_transactions.value=emptyList();_notifications.value=emptyList();_auditLogs.value=emptyList();_stateTransitionLogs.value=emptyList();_customers.value=emptyList();_packages.value=emptyList();_taskSettings.value=emptyList();_taskAmountSettings.value=emptyList();_notificationSettings.value=emptyList();_employees.value=emptyList();_roles.value=emptyList();_isBackendConnected.value=false}
     private fun nowIso()=SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX",Locale.US).format(Date())
 
     private fun JSONArray.optJSONObject(i:Int):JSONObject?=if(i in 0 until length()) optJSONObject(i) else null
@@ -390,6 +394,7 @@ object AmanRepository {
     private fun JSONArray.toNotifications()=safeMap { j -> val relatedType=j.optString("related_entity_type").ifBlank { "" }; val route=when(relatedType){"protection_request"->"requests";"payment_task"->"tasks";"protection"->"protections";"audit_log"->"audit";else->null}; NotificationItem(j.getString("id"),null,j.text("title"),j.text("message"),j.optBoolean("is_read"),j.date("created_at"),route,j.text("type"),relatedType.ifBlank { null },j.optString("related_entity_id").ifBlank { null })}
     private fun JSONArray.toAuditLogs()=safeMap { j ->AuditLog(j.getString("id"),j.text("action"),j.text("entity_type"),j.optString("entity_id").ifBlank{null},"",j.optString("actor_id"),j.optString("metadata",j.optString("after_data")),j.date("created_at"),j.optString("before_data").ifBlank { null },j.optString("after_data").ifBlank { null },j.optString("metadata").ifBlank { null })}
     private fun JSONArray.toTaskSettings()=safeMap { j ->TaskSettings(j.getString("id"),j.getString("provider_id"),j.optBoolean("first_task_enabled",true),j.optBoolean("manual_reschedule_enabled",true),if(j.isNull("default_interval_days"))null else j.optInt("default_interval_days"),j.optBoolean("is_active",true),j.optInt("visibility_days_before",30))}
+    private fun JSONArray.toTaskAmountSettings()=safeMap { j -> TaskAmountSetting(j.optString("id").ifBlank { null }, j.getString("provider_id"), j.optString("task_type"), j.optDouble("amount",0.0), j.optString("currency").ifBlank { "YER" }, j.optBoolean("is_active",true)) }
     private fun JSONArray.toNotificationSettings()=safeMap { j ->NotificationSetting(j.getString("id"),j.text("type"),j.text("recipient"),j.optBoolean("enabled",true),if(j.isNull("days_before"))null else j.optInt("days_before"))}
     private fun JSONArray.toEmployees()=safeMap { j ->EmployeeAccount(j.getString("id"),j.text("full_name"),j.text("email"),j.text("status"),j.optString("role_id").ifBlank{null},j.obj("roles")?.text("name"))}
     private fun JSONArray.toSettings():SystemSettings{

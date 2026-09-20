@@ -27,6 +27,7 @@ import com.example.ui.viewmodel.AmanViewModel
 fun AdminTaskSettingsScreen(viewModel: AmanViewModel, modifier: Modifier = Modifier) {
     val providers by viewModel.telecomProviders.collectAsState()
     val settings by viewModel.taskSettings.collectAsState()
+    val amountSettings by viewModel.taskAmountSettings.collectAsState()
     val notifications by viewModel.notificationSettings.collectAsState()
     val classifications by viewModel.taskClassifications.collectAsState()
     val byProvider = settings.associateBy { it.providerId }
@@ -44,6 +45,10 @@ fun AdminTaskSettingsScreen(viewModel: AmanViewModel, modifier: Modifier = Modif
                 var reschedule by remember(current?.id) { mutableStateOf(current?.manualRescheduleEnabled ?: true) }
                 var interval by remember(current?.id) { mutableStateOf(current?.intervalDays?.toString().orEmpty()) }
                 var visibleBefore by remember(current?.id) { mutableStateOf(current?.visibilityDaysBefore?.toString() ?: "30") }
+                val initialAmount = amountSettings.firstOrNull { it.providerId == provider.id && it.taskType == "initial_activation" }
+                val recurringAmount = amountSettings.firstOrNull { it.providerId == provider.id && it.taskType == "recurring" }
+                var initialAmountText by remember(initialAmount?.id) { mutableStateOf(initialAmount?.amount?.toString().orEmpty()) }
+                var recurringAmountText by remember(recurringAmount?.id) { mutableStateOf(recurringAmount?.amount?.toString().orEmpty()) }
                 Card(colors=CardDefaults.cardColors(containerColor=SurfaceWhite), modifier=Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement=Arrangement.spacedBy(6.dp)) {
                         Text(provider.nameAr, fontSize=14.sp, fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)
@@ -51,10 +56,17 @@ fun AdminTaskSettingsScreen(viewModel: AmanViewModel, modifier: Modifier = Modif
                         Row(verticalAlignment=Alignment.CenterVertically) { Checkbox(reschedule,{reschedule=it}); Text("السماح بإعادة الجدولة اليدوية") }
                         OutlinedTextField(value=interval,onValueChange={interval=it.filter(Char::isDigit)},label={Text("مدة الخمول بين الدورات بالأيام")},singleLine=true,modifier=Modifier.fillMaxWidth())
                         OutlinedTextField(value=visibleBefore,onValueChange={visibleBefore=it.filter(Char::isDigit)},label={Text("ظهور المهمة قبل الموعد بالأيام (الافتراضي 30)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                        Text("مبالغ التشغيل حسب نوع المهمة", fontSize=12.sp, fontWeight=androidx.compose.ui.text.font.FontWeight.Bold)
+                        OutlinedTextField(value=initialAmountText,onValueChange={initialAmountText=it.filter { c -> c.isDigit() || c == '.' }},label={Text("مبلغ المهمة الأولى")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                        OutlinedTextField(value=recurringAmountText,onValueChange={recurringAmountText=it.filter { c -> c.isDigit() || c == '.' }},label={Text("مبلغ المهمة الدورية")},singleLine=true,modifier=Modifier.fillMaxWidth())
                         Button(onClick={
                             val parsed = interval.toIntOrNull()
                             if (parsed == null || parsed <= 0) viewModel.showMessage("الفاصل الدوري يجب أن يكون رقمًا موجبًا", true)
-                            else viewModel.updateTaskSettings(provider.id,first,reschedule,parsed,visibleBefore.toIntOrNull() ?: 30,true)
+                            else {
+                                viewModel.updateTaskSettings(provider.id,first,reschedule,parsed,visibleBefore.toIntOrNull() ?: 30,true)
+                                initialAmountText.toDoubleOrNull()?.takeIf { it >= 0 }?.let { value -> viewModel.updateTaskAmountSetting(TaskAmountSetting(initialAmount?.id,provider.id,"initial_activation",value,"YER",true)) }
+                                recurringAmountText.toDoubleOrNull()?.takeIf { it >= 0 }?.let { value -> viewModel.updateTaskAmountSetting(TaskAmountSetting(recurringAmount?.id,provider.id,"recurring",value,"YER",true)) }
+                            }
                         },colors=ButtonDefaults.buttonColors(containerColor=AmanTealDark),modifier=Modifier.fillMaxWidth()) { Text("حفظ إعدادات الشركة",color=Color.White) }
                         HorizontalDivider()
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {

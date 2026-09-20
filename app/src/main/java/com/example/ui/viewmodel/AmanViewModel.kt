@@ -82,6 +82,7 @@ class AmanViewModel : ViewModel() {
     val transactions: StateFlow<List<FinancialTransaction>> = AmanRepository.transactions
     val notifications: StateFlow<List<NotificationItem>> = AmanRepository.notifications
     val taskSettings: StateFlow<List<TaskSettings>> = AmanRepository.taskSettings
+    val taskAmountSettings: StateFlow<List<TaskAmountSetting>> = AmanRepository.taskAmountSettings
     val notificationSettings: StateFlow<List<NotificationSetting>> = AmanRepository.notificationSettings
     val taskClassifications: StateFlow<List<TaskClassification>> = AmanRepository.taskClassifications
     val employees: StateFlow<List<EmployeeAccount>> = AmanRepository.employees
@@ -513,6 +514,7 @@ class AmanViewModel : ViewModel() {
 
 
     fun updateTaskSettings(providerId:String, firstTask:Boolean, reschedule:Boolean, intervalDays:Int?, visibilityDaysBefore:Int=30, active:Boolean=true) { viewModelScope.launch { AmanRepository.updateTaskSettings(providerId,firstTask,reschedule,intervalDays,visibilityDaysBefore,active).onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل حفظ إعدادات المهام",true) } } }
+    fun updateTaskAmountSetting(setting: TaskAmountSetting) { viewModelScope.launch { AmanRepository.updateTaskAmountSetting(setting).onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل حفظ مبلغ المهمة",true) } } }
     fun updateTaskClassification(id:String?,taskSettingsId:String,name:String,minDays:Int?,maxDays:Int?,sortOrder:Int,active:Boolean){ viewModelScope.launch { AmanRepository.updateTaskClassification(id,taskSettingsId,name,minDays,maxDays,sortOrder,active).onFailure{_uiMessage.value=UiMessage(it.message ?: "فشل حفظ تصنيف المهمة",true)} } }
         fun updateNotificationSetting(setting:NotificationSetting) { viewModelScope.launch { AmanRepository.updateNotificationSetting(setting).onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل حفظ إعداد الإشعار",true) } } }
     fun setEmployeeRole(userId:String,roleId:String) { viewModelScope.launch { AmanRepository.setEmployeeRole(userId,roleId).onFailure { _uiMessage.value=UiMessage(it.message ?: "فشل تغيير الدور",true) } } }

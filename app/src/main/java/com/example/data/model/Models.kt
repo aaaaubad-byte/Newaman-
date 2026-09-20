@@ -187,6 +187,15 @@ data class TaskSettings(
     val visibilityDaysBefore: Int = 30
 )
 
+data class TaskAmountSetting(
+    val id: String?,
+    val providerId: String,
+    val taskType: String,
+    val amount: Double,
+    val currency: String = "YER",
+    val isActive: Boolean = true
+)
+
 data class TaskClassification(
     val id:String, val taskSettingsId:String, val name:String, val minDaysRemaining:Int?, val maxDaysRemaining:Int?, val sortOrder:Int, val isActive:Boolean
 )
