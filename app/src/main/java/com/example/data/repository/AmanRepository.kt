@@ -210,7 +210,14 @@ object AmanRepository {
         is NetworkResult.Error -> Result.failure(Exception(result.messageAr)); is NetworkResult.NetworkFailure -> Result.failure(Exception(result.messageAr)); is NetworkResult.Unknown -> Result.failure(Exception(result.messageAr))
     }
 
-    suspend fun rejectProtectionRequest(requestId: String, reason: String): Result<Unit> = rpcUnit("reject_protection_request", JSONObject().apply { put("p_request_id",requestId); put("p_reason",reason.trim()) }).also { if (it.isSuccess) refreshAll() }
+    suspend fun rejectProtectionRequest(requestId: String, reason: String): Result<Unit> {
+        val cleanReason = reason.trim()
+        if (cleanReason.isBlank()) return Result.failure(Exception("سبب الرفض مطلوب"))
+        return rpcUnit("reject_protection_request", JSONObject().apply {
+            put("p_request_id", requestId)
+            put("p_rejection_reason", cleanReason)
+        }).also { if (it.isSuccess) refreshAll() }
+    }
 
     suspend fun submitRenewalRequest(protectionId: String, packageId: String, paymentMethodId: String, paymentReference: String): Result<Unit> = try {
         if (paymentReference.trim().isBlank()) throw IllegalArgumentException("رقم المرجع مطلوب")
@@ -240,8 +247,11 @@ object AmanRepository {
         else Result.failure(Exception((r as? NetworkResult.Error)?.messageAr ?: "فشل إعادة جدولة المهمة"))
     } catch (e: Exception) { Result.failure(e) }
 
-    suspend fun completePaymentTask(taskId: String, notes: String? = null): Result<PaymentTask> {
-        val result = SupabaseClient.rpc("complete_payment_task", JSONObject().put("p_task_id", taskId), token())
+    suspend fun completePaymentTask(taskId: String, telecomReference: String? = null): Result<PaymentTask> {
+        val result = SupabaseClient.rpc("complete_payment_task", JSONObject().apply {
+            put("p_task_id", taskId)
+            put("p_telecom_ref", telecomReference?.trim().takeUnless { it.isNullOrBlank() } ?: JSONObject.NULL)
+        }, token())
         return when (result) {
             is NetworkResult.Success -> { refreshAll(); _paymentTasks.value.firstOrNull { it.id == taskId }?.let { Result.success(it) } ?: Result.failure(Exception("تم التنفيذ ولكن تعذر تحديث المهمة")) }
             is NetworkResult.Error -> Result.failure(Exception(result.messageAr)); is NetworkResult.NetworkFailure -> Result.failure(Exception(result.messageAr)); is NetworkResult.Unknown -> Result.failure(Exception(result.messageAr))
@@ -291,7 +301,14 @@ object AmanRepository {
 
     suspend fun markNotificationAsRead(id:String){ val table=if(_currentUser.value?.userType==UserType.CUSTOMER)"client_notifications" else "admin_notifications"; val filters=if(table=="client_notifications") mapOf("id" to "eq.$id","customer_id" to "eq.${_currentUser.value?.id}") else mapOf("id" to "eq.$id"); SupabaseClient.patch(table,filters,JSONObject().put("is_read",true),token()); refreshAll() }
     suspend fun markAllNotificationsRead(){ val table=if(_currentUser.value?.userType==UserType.CUSTOMER)"client_notifications" else "admin_notifications"; val filters=if(table=="client_notifications") mapOf("customer_id" to "eq.${_currentUser.value?.id}","is_read" to "eq.false") else mapOf("is_read" to "eq.false"); SupabaseClient.patch(table,filters,JSONObject().put("is_read",true),token()); refreshAll() }
-    suspend fun verifyPaymentReceipt(requestId:String,note:String):Result<Unit> = rpcUnit("verify_request_payment",JSONObject().put("p_request_id",requestId).put("p_verified",true))
+    suspend fun verifyPaymentReceipt(requestId:String,note:String):Result<Unit> {
+        val cleanNote = note.trim()
+        return rpcUnit("verify_request_payment", JSONObject().apply {
+            put("p_request_id", requestId)
+            put("p_verified", true)
+            put("p_note", cleanNote.ifBlank { JSONObject.NULL })
+        })
+    }
 
     suspend fun updateTaskSettings(providerId:String,firstTask:Boolean,reschedule:Boolean,intervalDays:Int?,visibilityDaysBefore:Int,active:Boolean):Result<Unit> = rpcUnit("admin_upsert_task_settings", JSONObject().apply { put("p_provider_id",providerId);put("p_first_task_enabled",firstTask);put("p_manual_reschedule_enabled",reschedule);put("p_interval_days",intervalDays ?: JSONObject.NULL);put("p_visibility_days_before",visibilityDaysBefore);put("p_is_active",active) })
     suspend fun updateTaskClassification(id:String?,taskSettingsId:String,name:String,minDays:Int?,maxDays:Int?,sortOrder:Int,active:Boolean):Result<Unit> = rpcUnit("admin_upsert_task_classification",JSONObject().apply{put("p_id",id ?: JSONObject.NULL);put("p_task_settings_id",taskSettingsId);put("p_name",name.trim());put("p_min_days",minDays ?: JSONObject.NULL);put("p_max_days",maxDays ?: JSONObject.NULL);put("p_sort_order",sortOrder);put("p_is_active",active)})
@@ -362,7 +379,7 @@ object AmanRepository {
         Protection(id=j.optString("id"),requestId=j.optString("request_id"),customerId=j.optString("customer_id").ifBlank { cn?.optString("customer_id").orEmpty() },numberId=j.optString("customer_number_id").ifBlank { j.optString("phone_number_id") },phoneNumber=j.optString("number").ifBlank { pn?.optString("number").orEmpty() }.ifBlank { j.optString("phone_number") },providerNameAr=j.optString("provider_name").ifBlank { j.optString("provider_name_snapshot") }.ifBlank { tp?.optString("name_ar").orEmpty() },status=j.optString("status","active"),startDate=j.optString("starts_at").ifBlank { j.optString("start_at") },endDate=j.optString("expires_at").ifBlank { j.optString("end_at") },durationDaysSnapshot=j.optInt("package_duration_days_snapshot",pkg?.optInt("duration_days",0) ?: 0),priceSnapshot=j.optDouble("package_price_snapshot",pkg?.optDouble("price",0.0) ?: 0.0))
     }
     private fun JSONArray.toPaymentTasks()=safeMap { j ->
-        val stored=if(j.optString("status")=="completed") TaskStatus.COMPLETED else TaskStatus.DUE
+        val stored=TaskStatus.fromValue(j.optString("status"))
         PaymentTask(id=j.optString("id"), protectionId=j.optString("protection_id"), numberId=j.optString("customer_number_id").ifBlank { j.optString("number_id") }, phoneNumber=j.optString("number").ifBlank { j.optString("phone_number") }, providerId=j.optString("provider_id"), providerNameAr=j.optString("provider_name").ifBlank { j.optString("provider_name_ar") }, cycleNumber=j.optInt("cycle_number",1), dueDate=j.date("due_at"), amountSnapshot=j.optDouble("amount_snapshot",0.0), status=stored, completedAt=j.optString("completed_at").ifBlank{null}, paymentReference=j.optString("telecom_reference").ifBlank{null}, notes=j.optString("rescheduled_reason").ifBlank{null}, taskType=j.optString("task_type","recurring"), telecomDueAt=j.optString("telecom_due_at").ifBlank{null}, daysRemaining=if(j.has("days_remaining")&&!j.isNull("days_remaining")) j.optInt("days_remaining") else null, classificationName=j.optString("classification_name").ifBlank{null})
     }
     private fun JSONArray.toTransactions()=safeMap { j ->FinancialTransaction(j.getString("id"),j.text("tx_type"),j.optDouble("amount"),j.text("currency"),j.optString("description",j.text("source_type")),j.optString("reference").ifBlank{null},j.text("source_type"),j.optString("source_id").ifBlank{null},j.date("created_at"))}

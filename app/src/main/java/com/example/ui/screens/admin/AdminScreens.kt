@@ -156,7 +156,7 @@ fun AdminOverviewScreen(
     val renewalNeeded = if (renewalWindow != null) protections.count { it.status == "active" && it.daysRemaining <= renewalWindow } else 0
     val unreadNotifications = viewModel.notifications.collectAsState().value.count { !it.isRead }
     val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
-    val visibleOpenTasks = paymentTasks.filter { it.status != TaskStatus.COMPLETED }
+    val visibleOpenTasks = paymentTasks.filter { it.status != TaskStatus.COMPLETED && it.status != TaskStatus.CANCELLED }
     val todayTasks = visibleOpenTasks.count { it.dueDate.take(10) == today }
     val overdueTasks = visibleOpenTasks.count { it.dueDate.take(10) < today }
     val upcomingTasks = visibleOpenTasks.count { it.dueDate.take(10) > today }
@@ -334,6 +334,8 @@ fun AdminRequestsScreen(
     val requests by viewModel.protectionRequests.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
     val systemSettings by viewModel.systemSettings.collectAsState()
+    val canApproveRequests = AuthorizationManager.hasPermission(UserType.ADMIN, currentUser?.role, Permission.REQUESTS_APPROVE)
+    val canRejectRequests = AuthorizationManager.hasPermission(UserType.ADMIN, currentUser?.role, Permission.REQUESTS_REJECT)
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("الكل") }
@@ -427,8 +429,12 @@ fun AdminRequestsScreen(
         }, confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (req.status == RequestStatus.PENDING) {
-                    TextButton(onClick = { selectedForDetails = null; selectedForApproval = req }) { Text("قبول") }
-                    TextButton(onClick = { selectedForDetails = null; selectedForRejection = req }) { Text("رفض", color = Color(0xFFDC2626)) }
+                    if (canApproveRequests) {
+                        TextButton(onClick = { selectedForDetails = null; selectedForApproval = req }) { Text("قبول") }
+                    }
+                    if (canRejectRequests) {
+                        TextButton(onClick = { selectedForDetails = null; selectedForRejection = req }) { Text("رفض", color = Color(0xFFDC2626)) }
+                    }
                 }
                 TextButton(onClick = { selectedForDetails = null }) { Text("إغلاق") }
             }
@@ -610,6 +616,8 @@ fun AdminPaymentTasksScreen(
     val tasks by viewModel.paymentTasks.collectAsState()
     val telecomProviders by viewModel.telecomProviders.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
+    val canCompleteTasks = AuthorizationManager.hasPermission(UserType.ADMIN, currentUser?.role, Permission.TASKS_COMPLETE)
+    val canRescheduleTasks = AuthorizationManager.hasPermission(UserType.ADMIN, currentUser?.role, Permission.TASKS_RESCHEDULE)
     val clipboardManager = LocalClipboardManager.current
 
     var searchQuery by remember { mutableStateOf("") }
@@ -636,12 +644,13 @@ fun AdminPaymentTasksScreen(
         val settings = taskSettings.firstOrNull { it.providerId == t.providerId }
         val visibleFrom = beforeDate(dueDay, taskSettings.firstOrNull { it.providerId == t.providerId }?.visibilityDaysBefore ?: 30)
         val isCompleted = t.status == TaskStatus.COMPLETED
-        val isVisible = isCompleted || t.taskType == "initial_activation" || today >= visibleFrom
+        val isCancelled = t.status == TaskStatus.CANCELLED
+        val isVisible = isCompleted || isCancelled || t.taskType == "initial_activation" || today >= visibleFrom
         val dateMatch = (dateFrom.isBlank() || dueDay >= dateFrom) && (dateTo.isBlank() || dueDay <= dateTo)
         matchesQuery && matchesProvider && dateMatch && isVisible && when (taskTab) {
             "مكتملة" -> isCompleted
             "الكل" -> true
-            else -> !isCompleted
+            else -> !isCompleted && !isCancelled
         }
     }
 
@@ -707,16 +716,25 @@ fun AdminPaymentTasksScreen(
                             Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(task.phoneNumber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f))
                                 Text(telecomProviders.firstOrNull { it.id == task.providerId }?.code ?: task.providerNameAr.take(3).uppercase(), fontSize = 11.sp, color = TextSecondary, modifier = Modifier.weight(1f))
-                                Text(if (task.status == TaskStatus.COMPLETED) "مكتملة" else if (task.taskType == "initial_activation") "مهمة أولى" else "دورية", fontSize = 10.sp, color = AmanTealDark, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text(when {
+                                    task.status == TaskStatus.COMPLETED -> "مكتملة"
+                                    task.status == TaskStatus.CANCELLED -> "ملغاة"
+                                    task.status == TaskStatus.DUE -> "مستحقة"
+                                    else -> if (task.taskType == "initial_activation") "مهمة أولى" else "مفتوحة"
+                                }, fontSize = 10.sp, color = AmanTealDark, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                                 IconButton(onClick = { expandedTaskId = if (expandedTaskId == task.id) null else task.id }, modifier = Modifier.weight(0.8f)) {
                                     Icon(Icons.Default.Info, contentDescription = if (expandedTaskId == task.id) "إخفاء التفاصيل" else "عرض التفاصيل", tint = AmanTealDark, modifier = Modifier.size(18.dp))
                                 }
                             }
-                            if (task.status != TaskStatus.COMPLETED) {
+                            if (task.status != TaskStatus.COMPLETED && task.status != TaskStatus.CANCELLED) {
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    IconButton(onClick = { selectedTaskToComplete = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Check, contentDescription = "إكمال المهمة", tint = AmanTealDark) }
+                                    if (canCompleteTasks) {
+                                        IconButton(onClick = { selectedTaskToComplete = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Check, contentDescription = "إكمال المهمة", tint = AmanTealDark) }
+                                    }
                                     IconButton(onClick = { clipboardManager.setText(AnnotatedString(task.phoneNumber)) }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.ContentCopy, contentDescription = "نسخ الرقم", tint = AmanTealDark) }
-                                    IconButton(onClick = { selectedTaskToReschedule = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.DateRange, contentDescription = "جدولة المهمة", tint = AmanTealDark) }
+                                    if (canRescheduleTasks) {
+                                        IconButton(onClick = { selectedTaskToReschedule = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.DateRange, contentDescription = "جدولة المهمة", tint = AmanTealDark) }
+                                    }
                                 }
                             }
                             if (expandedTaskId == task.id) {
@@ -726,10 +744,14 @@ fun AdminPaymentTasksScreen(
                                     Text("نوع المهمة: ${if (task.taskType == "initial_activation") "تفعيل أولي" else "دورية"}", fontSize = 11.sp)
                                     task.daysRemaining?.let { Text("المتبقي قبل الاستحقاق الخارجي: $it يومًا", fontSize = 11.sp, color = AmanTealDark) }
                                     Text("المبلغ: ${task.amountSnapshot} ريال", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    if (task.status != TaskStatus.COMPLETED) {
+                                    if (task.status != TaskStatus.COMPLETED && task.status != TaskStatus.CANCELLED) {
                                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            IconButton(onClick = { selectedTaskToComplete = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Check, contentDescription = "إكمال المهمة", tint = AmanTealDark) }
-                                            IconButton(onClick = { selectedTaskToReschedule = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.DateRange, contentDescription = "جدولة المهمة", tint = AmanTealDark) }
+                                            if (canCompleteTasks) {
+                                                IconButton(onClick = { selectedTaskToComplete = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Check, contentDescription = "إكمال المهمة", tint = AmanTealDark) }
+                                            }
+                                            if (canRescheduleTasks) {
+                                                IconButton(onClick = { selectedTaskToReschedule = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.DateRange, contentDescription = "جدولة المهمة", tint = AmanTealDark) }
+                                            }
                                         }
                                     } else {
                                         Text("تم السداد: ${task.completedAt} — ${task.paymentReference}", fontSize = 11.sp, color = StatusActiveText)
@@ -791,7 +813,7 @@ fun AdminPaymentTasksScreen(
                     OutlinedTextField(
                         value = taskNotes,
                         onValueChange = { taskNotes = it },
-                        placeholder = { Text("ملاحظات إضافية (اختياري)", color = TextSecondary) },
+                        placeholder = { Text("مرجع السداد لدى شركة الاتصالات (اختياري)", color = TextSecondary) },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )

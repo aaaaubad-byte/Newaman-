@@ -162,8 +162,15 @@ data class Subscription(
 )
 
 enum class TaskStatus(val value: String, val titleAr: String) {
+    OPEN("open", "مفتوحة"),
     DUE("due", "مستحقة"),
-    COMPLETED("completed", "مكتملة")
+    COMPLETED("completed", "مكتملة"),
+    CANCELLED("cancelled", "ملغاة");
+
+    companion object {
+        fun fromValue(value: String?): TaskStatus =
+            entries.firstOrNull { it.value == value?.trim()?.lowercase() } ?: OPEN
+    }
 }
 
 data class TaskSettings(

@@ -416,9 +416,9 @@ class AmanViewModel : ViewModel() {
         }
     }
 
-    fun completePaymentTask(taskId: String, notes: String? = null) {
+    fun completePaymentTask(taskId: String, telecomReference: String? = null) {
         viewModelScope.launch {
-            val result = AmanRepository.completePaymentTask(taskId, notes)
+            val result = AmanRepository.completePaymentTask(taskId, telecomReference)
             result.onSuccess {
                 _uiMessage.value = UiMessage("تم تأكيد سداد المهمة وتسجيل المصروف التشغيلي بنجاح")
             }.onFailure {
