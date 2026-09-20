@@ -857,6 +857,37 @@ fun EmptyStateView(
     }
 }
 
+@Composable
+fun BackendConnectionBanner(
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = Color(0xFFFFF7ED),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B)),
+        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("تعذر مزامنة البيانات", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF92400E))
+                Text("تحقق من الاتصال ثم أعد المحاولة. لن يتم اعتبار القائمة فارغة بسبب هذا الخطأ.", fontSize = 10.sp, color = Color(0xFF92400E))
+            }
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(containerColor = AmanTealDark),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text("إعادة المحاولة", fontSize = 11.sp, color = Color.White)
+            }
+        }
+    }
+}
+
 // Helper tuple for 5 elements
 data class Quintuple<A, B, C, D, E>(
     val first: A,

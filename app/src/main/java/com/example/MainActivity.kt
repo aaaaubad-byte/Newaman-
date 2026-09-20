@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +40,7 @@ import com.example.data.model.CustomerNumber
 import com.example.data.model.UserType
 import com.example.ui.components.AmanBottomNavigation
 import com.example.ui.components.AmanTopAppBar
+import com.example.ui.components.BackendConnectionBanner
 import com.example.ui.screens.admin.AdminAuditLogScreen
 import com.example.ui.screens.admin.AdminCustomersScreen
 import com.example.ui.screens.admin.AdminNotificationsScreen
@@ -107,6 +110,7 @@ fun AmanApp(viewModel: AmanViewModel = viewModel()) {
     val systemSettings by viewModel.systemSettings.collectAsState()
     val telecomProviders by viewModel.telecomProviders.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isBackendConnected by viewModel.isBackendConnected.collectAsState()
     val uiMessage by viewModel.uiMessage.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -189,10 +193,17 @@ fun AmanApp(viewModel: AmanViewModel = viewModel()) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (!isBackendConnected && !isLoading) {
+                BackendConnectionBanner(
+                    onRetry = { viewModel.retryConnection() },
+                    modifier = Modifier.align(Alignment.TopCenter).padding(12.dp)
+                )
+            }
             Crossfade(
                 targetState = currentRoute,
                 animationSpec = tween(durationMillis = 220),
-                label = "aman_route_transition"
+                label = "aman_route_transition",
+                modifier = Modifier.padding(top = if (!isBackendConnected && !isLoading) 78.dp else 0.dp)
             ) { route ->
                 if (user.userType == UserType.CUSTOMER) {
                     when (route) {
@@ -272,6 +283,16 @@ fun AmanApp(viewModel: AmanViewModel = viewModel()) {
                             modifier = Modifier.size(24.dp)
                         )
                     }
+                }
+            }
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.08f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = com.example.ui.theme.AmanTealDark)
                 }
             }
         }

@@ -159,6 +159,33 @@ class AmanViewModel : ViewModel() {
         _uiMessage.value = UiMessage(message, isError)
     }
 
+    fun retryConnection() {
+        if (_isLoading.value) return
+        viewModelScope.launch {
+            _isLoading.value = true
+            when (val actor = SupabaseClient.currentActor(SessionManager.getAccessToken())) {
+                is NetworkResult.Success -> {
+                    val access = SessionManager.getAccessToken()
+                    if (access.isNullOrBlank()) {
+                        logout()
+                    } else {
+                        SessionManager.saveSession(access, SessionManager.getRefreshToken(), actor.data)
+                        AmanRepository.onUserAuthenticated(actor.data)
+                        _isLoggedIn.value = true
+                        _uiMessage.value = UiMessage("تمت استعادة الاتصال وتحديث البيانات")
+                    }
+                }
+                is NetworkResult.Error -> {
+                    if (actor.code == 401 || actor.code == 403) logout()
+                    else _uiMessage.value = UiMessage(actor.messageAr, isError = true)
+                }
+                is NetworkResult.NetworkFailure -> _uiMessage.value = UiMessage(actor.messageAr, isError = true)
+                is NetworkResult.Unknown -> _uiMessage.value = UiMessage(actor.messageAr, isError = true)
+            }
+            _isLoading.value = false
+        }
+    }
+
     // -------------------------------------------------------------
     // Real Authentication
     // -------------------------------------------------------------
@@ -377,23 +404,35 @@ class AmanViewModel : ViewModel() {
     // Admin Actions
     // -------------------------------------------------------------
     fun approveProtectionRequest(requestId: String) {
+        if (_isLoading.value) return
         viewModelScope.launch {
-            val result = AmanRepository.approveProtectionRequest(requestId)
-            result.onSuccess {
-                _uiMessage.value = UiMessage("تمت الموافقة على الطلب وتفعيل الحماية بنجاح")
-            }.onFailure {
-                _uiMessage.value = UiMessage(it.message ?: "فشلت الموافقة على الطلب", isError = true)
+            _isLoading.value = true
+            try {
+                val result = AmanRepository.approveProtectionRequest(requestId)
+                result.onSuccess {
+                    _uiMessage.value = UiMessage("تمت الموافقة على الطلب وتفعيل الحماية بنجاح")
+                }.onFailure {
+                    _uiMessage.value = UiMessage(it.message ?: "فشلت الموافقة على الطلب", isError = true)
+                }
+            } finally {
+                _isLoading.value = false
             }
         }
     }
 
     fun rejectProtectionRequest(requestId: String, reason: String) {
+        if (_isLoading.value) return
         viewModelScope.launch {
-            val result = AmanRepository.rejectProtectionRequest(requestId, reason)
-            result.onSuccess {
-                _uiMessage.value = UiMessage("تم رفض طلب الحماية وإشعار العميل")
-            }.onFailure {
-                _uiMessage.value = UiMessage(it.message ?: "فشل رفض الطلب", isError = true)
+            _isLoading.value = true
+            try {
+                val result = AmanRepository.rejectProtectionRequest(requestId, reason)
+                result.onSuccess {
+                    _uiMessage.value = UiMessage("تم رفض طلب الحماية وإشعار العميل")
+                }.onFailure {
+                    _uiMessage.value = UiMessage(it.message ?: "فشل رفض الطلب", isError = true)
+                }
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -409,20 +448,32 @@ class AmanViewModel : ViewModel() {
     }
 
     fun reschedulePaymentTask(taskId: String, newDueAt: String, reason: String? = null) {
+        if (_isLoading.value) return
         viewModelScope.launch {
-            val result = AmanRepository.reschedulePaymentTask(taskId, newDueAt, reason)
-            result.onSuccess { _uiMessage.value = UiMessage("تمت إعادة جدولة المهمة الحالية فقط") }
-                .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل إعادة جدولة المهمة", true) }
+            _isLoading.value = true
+            try {
+                val result = AmanRepository.reschedulePaymentTask(taskId, newDueAt, reason)
+                result.onSuccess { _uiMessage.value = UiMessage("تمت إعادة جدولة المهمة الحالية فقط") }
+                    .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل إعادة جدولة المهمة", true) }
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
     fun completePaymentTask(taskId: String, telecomReference: String? = null) {
+        if (_isLoading.value) return
         viewModelScope.launch {
-            val result = AmanRepository.completePaymentTask(taskId, telecomReference)
-            result.onSuccess {
-                _uiMessage.value = UiMessage("تم تأكيد سداد المهمة وتسجيل المصروف التشغيلي بنجاح")
-            }.onFailure {
-                _uiMessage.value = UiMessage(it.message ?: "فشل تأكيد سداد المهمة", isError = true)
+            _isLoading.value = true
+            try {
+                val result = AmanRepository.completePaymentTask(taskId, telecomReference)
+                result.onSuccess {
+                    _uiMessage.value = UiMessage("تم تأكيد سداد المهمة وتسجيل المصروف التشغيلي بنجاح")
+                }.onFailure {
+                    _uiMessage.value = UiMessage(it.message ?: "فشل تأكيد سداد المهمة", isError = true)
+                }
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -490,17 +541,29 @@ class AmanViewModel : ViewModel() {
     }
 
     fun verifyPayment(requestId: String, note: String) {
+        if (_isLoading.value) return
         viewModelScope.launch {
-            val res = AmanRepository.verifyPaymentReceipt(requestId, note)
-            res.onSuccess { _uiMessage.value = UiMessage("تم التحقق من إشعار السداد بنجاح") }
-                .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل التحقق من السداد", isError = true) }
+            _isLoading.value = true
+            try {
+                val res = AmanRepository.verifyPaymentReceipt(requestId, note)
+                res.onSuccess { _uiMessage.value = UiMessage("تم التحقق من إشعار السداد بنجاح") }
+                    .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل التحقق من السداد", isError = true) }
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
     fun approveRenewalRequest(requestId: String) {
+        if (_isLoading.value) return
         viewModelScope.launch {
-            AmanRepository.approveRenewalRequest(requestId)
-                .onSuccess { _uiMessage.value = UiMessage("تم قبول طلب التجديد وبدء الحماية الجديدة") }
-                .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل قبول طلب التجديد", true) }
+            _isLoading.value = true
+            try {
+                AmanRepository.approveRenewalRequest(requestId)
+                    .onSuccess { _uiMessage.value = UiMessage("تم قبول طلب التجديد وبدء الحماية الجديدة") }
+                    .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل قبول طلب التجديد", true) }
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
