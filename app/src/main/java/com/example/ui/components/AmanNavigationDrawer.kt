@@ -116,8 +116,6 @@ fun AmanDrawerContent(
         DrawerMenuItem("tasks", "مهام السداد", Icons.Default.DateRange, permission = Permission.TASKS_READ),
         DrawerMenuItem("notifications", "الإشعارات", Icons.Default.Notifications, permission = Permission.NOTIFICATIONS_READ),
         DrawerMenuItem("task_settings", "إعدادات المهام", Icons.Default.DateRange, permission = Permission.TASK_SETTINGS_MANAGE),
-        DrawerMenuItem("employees", "الموظفون والأدوار", Icons.Default.People, permission = Permission.EMPLOYEES_MANAGE),
-        DrawerMenuItem("roles", "الأدوار والصلاحيات", Icons.Default.Security, permission = Permission.ROLES_MANAGE),
         DrawerMenuItem("telecom", "شركات الاتصالات", Icons.Default.Phone, isDividerBefore = true, permission = Permission.PROVIDERS_MANAGE),
         DrawerMenuItem("wallets", "وسائل الدفع", Icons.Default.AccountBalance, permission = Permission.PAYMENT_METHODS_MANAGE),
         DrawerMenuItem("settings", "الإعدادات", Icons.Default.Settings, permission = Permission.SETTINGS_MANAGE),

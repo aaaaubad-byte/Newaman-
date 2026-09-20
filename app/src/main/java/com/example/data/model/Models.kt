@@ -177,6 +177,43 @@ enum class TaskStatus(val value: String, val titleAr: String) {
     }
 }
 
+enum class TaskTimeClassification(val value: String, val titleAr: String) {
+    OVERDUE("overdue", "متأخرة"),
+    DUE("due", "مستحقة اليوم"),
+    DUE_SOON("due_soon", "قريبة الاستحقاق"),
+    UPCOMING("upcoming", "قادمة");
+
+    companion object {
+        fun calculate(dueDateStr: String?, dueSoonDays: Int = 7): TaskTimeClassification {
+            if (dueDateStr.isNullOrBlank()) return UPCOMING
+            return try {
+                val clean = dueDateStr.take(10)
+                val parts = clean.split("-")
+                if (parts.size != 3) return UPCOMING
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(parts[0].toInt(), parts[1].toInt() - 1, parts[2].toInt(), 0, 0, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                val today = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }
+                val diffDays = ((cal.timeInMillis - today.timeInMillis) / (1000L * 60 * 60 * 24)).toInt()
+                when {
+                    diffDays < 0 -> OVERDUE
+                    diffDays == 0 -> DUE
+                    diffDays <= dueSoonDays -> DUE_SOON
+                    else -> UPCOMING
+                }
+            } catch (_: Exception) {
+                UPCOMING
+            }
+        }
+    }
+}
+
 data class TaskSettings(
     val id: String,
     val providerId: String,
@@ -234,8 +271,21 @@ data class PaymentTask(
     val taskType: String = "recurring",
     val telecomDueAt: String? = null,
     val daysRemaining: Int? = null,
-    val classificationName: String? = null
-)
+    val classificationName: String? = null,
+    val cancellationReason: String? = null
+) {
+    val timeClassification: TaskTimeClassification
+        get() = TaskTimeClassification.calculate(telecomDueAt ?: dueDate)
+
+    val isOpen: Boolean
+        get() = status == TaskStatus.OPEN || status == TaskStatus.DUE
+
+    val isCompleted: Boolean
+        get() = status == TaskStatus.COMPLETED
+
+    val isCancelled: Boolean
+        get() = status == TaskStatus.CANCELLED
+}
 
 data class FinancialTransaction(
     val id: String = UUID.randomUUID().toString(),

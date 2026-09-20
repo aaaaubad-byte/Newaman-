@@ -628,6 +628,7 @@ fun AdminPaymentTasksScreen(
     var expandedTaskId by remember { mutableStateOf<String?>(null) }
     var selectedTaskToComplete by remember { mutableStateOf<PaymentTask?>(null) }
     var selectedTaskToReschedule by remember { mutableStateOf<PaymentTask?>(null) }
+    var selectedTaskToCancel by remember { mutableStateOf<PaymentTask?>(null) }
 
     val taskSettings by viewModel.taskSettings.collectAsState()
     val providerOptions = listOf("كل الشركات") + tasks.map { it.providerNameAr }.distinct().sorted()
@@ -645,12 +646,16 @@ fun AdminPaymentTasksScreen(
         val visibleFrom = beforeDate(dueDay, taskSettings.firstOrNull { it.providerId == t.providerId }?.visibilityDaysBefore ?: 30)
         val isCompleted = t.status == TaskStatus.COMPLETED
         val isCancelled = t.status == TaskStatus.CANCELLED
+        val isOpen = t.isOpen
         val isVisible = isCompleted || isCancelled || t.taskType == "initial_activation" || today >= visibleFrom
         val dateMatch = (dateFrom.isBlank() || dueDay >= dateFrom) && (dateTo.isBlank() || dueDay <= dateTo)
         matchesQuery && matchesProvider && dateMatch && isVisible && when (taskTab) {
+            "متأخرة" -> isOpen && t.timeClassification == TaskTimeClassification.OVERDUE
+            "اليوم" -> isOpen && t.timeClassification == TaskTimeClassification.DUE
             "مكتملة" -> isCompleted
+            "ملغاة" -> isCancelled
             "الكل" -> true
-            else -> !isCompleted && !isCancelled
+            else -> isOpen
         }
     }
 
@@ -673,9 +678,17 @@ fun AdminPaymentTasksScreen(
             placeholderText = "بحث برقم الهاتف أو الشركة"
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            listOf("غير مكتملة", "مكتملة", "الكل").forEach { tab ->
-                OutlinedButton(onClick = { taskTab = tab }, modifier = Modifier.weight(1f)) { Text(if (taskTab == tab) "✓ $tab" else tab, fontSize = 11.sp) }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            listOf("غير مكتملة", "متأخرة", "اليوم", "مكتملة", "ملغاة", "الكل").forEach { tab ->
+                OutlinedButton(
+                    onClick = { taskTab = tab },
+                    colors = if (taskTab == tab) ButtonDefaults.outlinedButtonColors(containerColor = AmanTealLight.copy(alpha = 0.5f)) else ButtonDefaults.outlinedButtonColors()
+                ) {
+                    Text(if (taskTab == tab) "✓ $tab" else tab, fontSize = 11.sp, fontWeight = if (taskTab == tab) FontWeight.Bold else FontWeight.Normal)
+                }
             }
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -716,17 +729,24 @@ fun AdminPaymentTasksScreen(
                             Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(task.phoneNumber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f))
                                 Text(telecomProviders.firstOrNull { it.id == task.providerId }?.code ?: task.providerNameAr.take(3).uppercase(), fontSize = 11.sp, color = TextSecondary, modifier = Modifier.weight(1f))
-                                Text(when {
+                                val statusColor = when {
+                                    task.status == TaskStatus.COMPLETED -> StatusActiveText
+                                    task.status == TaskStatus.CANCELLED -> Color(0xFFDC2626)
+                                    task.timeClassification == TaskTimeClassification.OVERDUE -> Color(0xFFDC2626)
+                                    task.timeClassification == TaskTimeClassification.DUE -> Color(0xFFEA580C)
+                                    else -> AmanTealDark
+                                }
+                                val statusLabel = when {
                                     task.status == TaskStatus.COMPLETED -> "مكتملة"
                                     task.status == TaskStatus.CANCELLED -> "ملغاة"
-                                    task.status == TaskStatus.DUE -> "مستحقة"
-                                    else -> if (task.taskType == "initial_activation") "مهمة أولى" else "مفتوحة"
-                                }, fontSize = 10.sp, color = AmanTealDark, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    else -> task.timeClassification.titleAr
+                                }
+                                Text(statusLabel, fontSize = 10.sp, color = statusColor, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                                 IconButton(onClick = { expandedTaskId = if (expandedTaskId == task.id) null else task.id }, modifier = Modifier.weight(0.8f)) {
                                     Icon(Icons.Default.Info, contentDescription = if (expandedTaskId == task.id) "إخفاء التفاصيل" else "عرض التفاصيل", tint = AmanTealDark, modifier = Modifier.size(18.dp))
                                 }
                             }
-                            if (task.status != TaskStatus.COMPLETED && task.status != TaskStatus.CANCELLED) {
+                            if (task.isOpen) {
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (canCompleteTasks) {
                                         IconButton(onClick = { selectedTaskToComplete = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Check, contentDescription = "إكمال المهمة", tint = AmanTealDark) }
@@ -735,6 +755,7 @@ fun AdminPaymentTasksScreen(
                                     if (canRescheduleTasks) {
                                         IconButton(onClick = { selectedTaskToReschedule = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.DateRange, contentDescription = "جدولة المهمة", tint = AmanTealDark) }
                                     }
+                                    IconButton(onClick = { selectedTaskToCancel = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Close, contentDescription = "إلغاء المهمة", tint = Color(0xFFDC2626)) }
                                 }
                             }
                             if (expandedTaskId == task.id) {
@@ -753,8 +774,10 @@ fun AdminPaymentTasksScreen(
                                                 IconButton(onClick = { selectedTaskToReschedule = task }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.DateRange, contentDescription = "جدولة المهمة", tint = AmanTealDark) }
                                             }
                                         }
+                                    } else if (task.status == TaskStatus.CANCELLED) {
+                                        Text("سبب الإلغاء: ${task.cancellationReason ?: task.notes ?: "تم إلغاء المهمة"}", fontSize = 11.sp, color = Color(0xFFDC2626))
                                     } else {
-                                        Text("تم السداد: ${task.completedAt} — ${task.paymentReference}", fontSize = 11.sp, color = StatusActiveText)
+                                        Text("تم السداد: ${task.completedAt} — ${task.paymentReference ?: "بدون مرجع"}", fontSize = 11.sp, color = StatusActiveText)
                                     }
                                 }
                             }
@@ -813,7 +836,8 @@ fun AdminPaymentTasksScreen(
                     OutlinedTextField(
                         value = taskNotes,
                         onValueChange = { taskNotes = it },
-                        placeholder = { Text("مرجع السداد لدى شركة الاتصالات (اختياري)", color = TextSecondary) },
+                        label = { Text("مرجع السداد لدى شركة الاتصالات (إلزامي)") },
+                        placeholder = { Text("أدخل رقم العملية أو إشعار التحويل", color = TextSecondary) },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -822,9 +846,10 @@ fun AdminPaymentTasksScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.completePaymentTask(task.id, taskNotes)
+                        viewModel.completePaymentTask(task.id, taskNotes.trim())
                         selectedTaskToComplete = null
                     },
+                    enabled = taskNotes.trim().isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = AmanTealDark)
                 ) {
                     Text("تأكيد السداد وقيد المصروف", color = Color.White)
@@ -833,6 +858,46 @@ fun AdminPaymentTasksScreen(
             dismissButton = {
                 TextButton(onClick = { selectedTaskToComplete = null }) {
                     Text("إلغاء", color = TextSecondary)
+                }
+            }
+        )
+    }
+
+    // Cancel Task Dialog
+    selectedTaskToCancel?.let { task ->
+        var cancelReason by remember(task.id) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { selectedTaskToCancel = null },
+            title = { Text("إلغاء مهمة السداد", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("الرقم: ${task.phoneNumber} (${task.providerNameAr})")
+                    Text("المبلغ: ${task.amountSnapshot} ريال", fontSize = 12.sp, color = TextSecondary)
+                    OutlinedTextField(
+                        value = cancelReason,
+                        onValueChange = { cancelReason = it },
+                        label = { Text("سبب الإلغاء (إلزامي)") },
+                        placeholder = { Text("اكتب سبب إلغاء المهمة...") },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.cancelPaymentTask(task.id, cancelReason.trim())
+                        selectedTaskToCancel = null
+                    },
+                    enabled = cancelReason.trim().isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                ) {
+                    Text("تأكيد الإلغاء", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedTaskToCancel = null }) {
+                    Text("تراجع")
                 }
             }
         )

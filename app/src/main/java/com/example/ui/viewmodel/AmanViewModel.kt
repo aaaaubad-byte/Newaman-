@@ -70,6 +70,7 @@ class AmanViewModel : ViewModel() {
     val currentRoute: StateFlow<String> = _currentRoute.asStateFlow()
 
     val isBackendConnected: StateFlow<Boolean> = AmanRepository.isBackendConnected
+    val dataLoadError: StateFlow<String?> = AmanRepository.dataLoadError
 
     // Data streams from repository
     val telecomProviders: StateFlow<List<TelecomProvider>> = AmanRepository.telecomProviders
@@ -360,15 +361,19 @@ class AmanViewModel : ViewModel() {
     // Customer Actions
     // -------------------------------------------------------------
     fun addCustomerNumber(phoneNumber: String, onSuccess: (CustomerNumber) -> Unit = {}) {
+        if (_isLoading.value) return
         viewModelScope.launch {
             _isLoading.value = true
-            val result = AmanRepository.addCustomerNumber(phoneNumber)
-            _isLoading.value = false
-            result.onSuccess {
-                _uiMessage.value = UiMessage("تمت إضافة الرقم بنجاح (${it.phoneNumber} - ${it.providerNameAr})")
-                onSuccess(it)
-            }.onFailure {
-                _uiMessage.value = UiMessage(it.message ?: "فشلت إضافة الرقم", isError = true)
+            try {
+                val result = AmanRepository.addCustomerNumber(phoneNumber)
+                result.onSuccess {
+                    _uiMessage.value = UiMessage("تمت إضافة الرقم بنجاح (${it.phoneNumber} - ${it.providerNameAr})")
+                    onSuccess(it)
+                }.onFailure {
+                    _uiMessage.value = UiMessage(it.message ?: "فشلت إضافة الرقم", isError = true)
+                }
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -380,6 +385,7 @@ class AmanViewModel : ViewModel() {
         paymentReference: String,
         onSuccess: () -> Unit = {}
     ) {
+        if (_isLoading.value) return
         val signature = "$numberId|$packageId|$walletId|${paymentReference.trim()}"
         if (signature != protectionSubmissionSignature) {
             protectionSubmissionSignature = signature
@@ -388,15 +394,18 @@ class AmanViewModel : ViewModel() {
         val idempotencyKey = protectionSubmissionKey ?: UUID.randomUUID().toString()
         viewModelScope.launch {
             _isLoading.value = true
-            val result = AmanRepository.submitProtectionRequest(numberId, packageId, walletId, paymentReference, idempotencyKey)
-            _isLoading.value = false
-            result.onSuccess {
-                protectionSubmissionSignature = null
-                protectionSubmissionKey = null
-                _uiMessage.value = UiMessage("تم إرسال طلب الحماية بنجاح وهو الآن قيد المراجعة")
-                onSuccess()
-            }.onFailure {
-                _uiMessage.value = UiMessage(it.message ?: "فشل تقديم طلب الحماية", isError = true)
+            try {
+                val result = AmanRepository.submitProtectionRequest(numberId, packageId, walletId, paymentReference, idempotencyKey)
+                result.onSuccess {
+                    protectionSubmissionSignature = null
+                    protectionSubmissionKey = null
+                    _uiMessage.value = UiMessage("تم إرسال طلب الحماية بنجاح وهو الآن قيد المراجعة")
+                    onSuccess()
+                }.onFailure {
+                    _uiMessage.value = UiMessage(it.message ?: "فشل تقديم طلب الحماية", isError = true)
+                }
+            } finally {
+                _isLoading.value = false
             }
         }
     }
@@ -439,12 +448,16 @@ class AmanViewModel : ViewModel() {
     }
 
     fun submitRenewalRequest(protectionId: String, packageId: String, paymentMethodId: String, reference: String, onSuccess: () -> Unit = {}) {
+        if (_isLoading.value) return
         viewModelScope.launch {
             _isLoading.value = true
-            val result = AmanRepository.submitRenewalRequest(protectionId, packageId, paymentMethodId, reference)
-            _isLoading.value = false
-            result.onSuccess { _uiMessage.value = UiMessage("تم إرسال طلب التجديد للمراجعة"); onSuccess() }
-                .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل إرسال طلب التجديد", true) }
+            try {
+                val result = AmanRepository.submitRenewalRequest(protectionId, packageId, paymentMethodId, reference)
+                result.onSuccess { _uiMessage.value = UiMessage("تم إرسال طلب التجديد للمراجعة"); onSuccess() }
+                    .onFailure { _uiMessage.value = UiMessage(it.message ?: "فشل إرسال طلب التجديد", true) }
+            } finally {
+                _isLoading.value = false
+            }
         }
     }
 
@@ -472,6 +485,23 @@ class AmanViewModel : ViewModel() {
                     _uiMessage.value = UiMessage("تم تأكيد سداد المهمة وتسجيل المصروف التشغيلي بنجاح")
                 }.onFailure {
                     _uiMessage.value = UiMessage(it.message ?: "فشل تأكيد سداد المهمة", isError = true)
+                }
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun cancelPaymentTask(taskId: String, reason: String) {
+        if (_isLoading.value) return
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val result = AmanRepository.cancelPaymentTask(taskId, reason)
+                result.onSuccess {
+                    _uiMessage.value = UiMessage("تم إلغاء المهمة بنجاح")
+                }.onFailure {
+                    _uiMessage.value = UiMessage(it.message ?: "فشل إلغاء المهمة", isError = true)
                 }
             } finally {
                 _isLoading.value = false

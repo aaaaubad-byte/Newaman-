@@ -67,6 +67,8 @@ object AmanRepository {
     val permissions: StateFlow<List<PermissionItem>> = _permissions.asStateFlow()
     private val _isBackendConnected = MutableStateFlow(false)
     val isBackendConnected: StateFlow<Boolean> = _isBackendConnected.asStateFlow()
+    private val _dataLoadError = MutableStateFlow<String?>(null)
+    val dataLoadError: StateFlow<String?> = _dataLoadError.asStateFlow()
 
     private fun token() = SessionManager.getAccessToken()
 
@@ -265,6 +267,21 @@ object AmanRepository {
         }
     }
 
+    suspend fun cancelPaymentTask(taskId: String, reason: String): Result<Boolean> {
+        val cleanReason = reason.trim()
+        if (cleanReason.isBlank()) return Result.failure(Exception("سبب الإلغاء مطلوب"))
+        val result = SupabaseClient.rpc("cancel_payment_task", JSONObject().apply {
+            put("p_task_id", taskId)
+            put("p_reason", cleanReason)
+        }, token())
+        return when (result) {
+            is NetworkResult.Success -> { refreshAll(); Result.success(true) }
+            is NetworkResult.Error -> Result.failure(Exception(result.messageAr))
+            is NetworkResult.NetworkFailure -> Result.failure(result.exception)
+            is NetworkResult.Unknown -> Result.failure(Exception(result.messageAr))
+        }
+    }
+
     fun getFinancialSummary(): FinancialSummary { val i=_transactions.value.filter{it.type=="income"}.sumOf{it.amount}; val e=_transactions.value.filter{it.type=="expense"}.sumOf{it.amount}; return FinancialSummary(i,e,i-e,_systemSettings.value.currency) }
 
     suspend fun setTelecomProviderActive(id:String,active:Boolean):Result<Unit> = rpcUnit("admin_upsert_provider", JSONObject().apply { put("p_id",id); val p=_telecomProviders.value.firstOrNull{it.id==id}; put("p_name",p?.nameAr ?: ""); put("p_code",p?.code ?: ""); put("p_number_length",p?.numberLength ?: 9); put("p_is_active",active); put("p_sort_order",p?.sortOrder ?: 0); put("p_is_visible_to_customer",p?.isVisibleToCustomer ?: true); put("p_logo_url",p?.logoUrl ?: JSONObject.NULL) })
@@ -388,7 +405,27 @@ object AmanRepository {
     }
     private fun JSONArray.toPaymentTasks()=safeMap { j ->
         val stored=TaskStatus.fromValue(j.optString("status"))
-        PaymentTask(id=j.optString("id"), protectionId=j.optString("protection_id"), numberId=j.optString("customer_number_id").ifBlank { j.optString("number_id") }, phoneNumber=j.optString("number").ifBlank { j.optString("phone_number") }, providerId=j.optString("provider_id"), providerNameAr=j.optString("provider_name").ifBlank { j.optString("provider_name_ar") }, cycleNumber=j.optInt("cycle_number",1), dueDate=j.date("due_at"), amountSnapshot=j.optDouble("amount_snapshot",0.0), status=stored, completedAt=j.optString("completed_at").ifBlank{null}, paymentReference=j.optString("telecom_reference").ifBlank{null}, notes=j.optString("rescheduled_reason").ifBlank{null}, taskType=j.optString("task_type","recurring"), telecomDueAt=j.optString("telecom_due_at").ifBlank{null}, daysRemaining=if(j.has("days_remaining")&&!j.isNull("days_remaining")) j.optInt("days_remaining") else null, classificationName=j.optString("classification_name").ifBlank{null})
+        val dueDateVal = j.optString("due_at").ifBlank { j.optString("due_date") }.take(10)
+        PaymentTask(
+            id=j.optString("id"),
+            protectionId=j.optString("protection_id"),
+            numberId=j.optString("customer_number_id").ifBlank { j.optString("number_id") },
+            phoneNumber=j.optString("number").ifBlank { j.optString("phone_number") },
+            providerId=j.optString("provider_id"),
+            providerNameAr=j.optString("provider_name").ifBlank { j.optString("provider_name_ar") },
+            cycleNumber=j.optInt("cycle_number",1),
+            dueDate=dueDateVal,
+            amountSnapshot=j.optDouble("amount_snapshot",0.0),
+            status=stored,
+            completedAt=j.optString("completed_at").ifBlank{null},
+            paymentReference=j.optString("telecom_reference").ifBlank{null},
+            notes=j.optString("rescheduled_reason").ifBlank{null},
+            taskType=j.optString("task_type","recurring"),
+            telecomDueAt=j.optString("telecom_due_at").ifBlank{null},
+            daysRemaining=if(j.has("days_remaining")&&!j.isNull("days_remaining")) j.optInt("days_remaining") else null,
+            classificationName=j.optString("time_classification").ifBlank{ j.optString("classification_name").ifBlank{null} },
+            cancellationReason=if (stored == TaskStatus.CANCELLED) j.optString("rescheduled_reason").ifBlank{null} else null
+        )
     }
     private fun JSONArray.toTransactions()=safeMap { j ->FinancialTransaction(j.getString("id"),j.text("tx_type"),j.optDouble("amount"),j.text("currency"),j.optString("description",j.text("source_type")),j.optString("reference").ifBlank{null},j.text("source_type"),j.optString("source_id").ifBlank{null},j.date("created_at"))}
     private fun JSONArray.toNotifications()=safeMap { j -> val relatedType=j.optString("related_entity_type").ifBlank { "" }; val route=when(relatedType){"protection_request"->"requests";"payment_task"->"tasks";"protection"->"protections";"audit_log"->"audit";else->null}; NotificationItem(j.getString("id"),null,j.text("title"),j.text("message"),j.optBoolean("is_read"),j.date("created_at"),route,j.text("type"),relatedType.ifBlank { null },j.optString("related_entity_id").ifBlank { null })}
