@@ -1,3 +1,20 @@
 <resources>
-    <string name="app_name">أمان</string>
+    <string name="app_name">أمان | AMAN</string>
+    <string name="app_slogan_main">أرقامك .. أمان بين يديك</string>
+    <string name="app_slogan_sub">أمان حماية وضمان</string>
+    
+    <!-- Roles in Mobile App -->
+    <string name="role_customer">منطقة العميل</string>
+    <string name="role_admin">إدارة العمليات والمهام</string>
+    <string name="role_supervisor">المشرف الميداني</string>
+    <string name="role_employee">موظف العمليات</string>
+
+    <!-- Navigation Tabs -->
+    <string name="tab_home">الرئيسية</string>
+    <string name="tab_phones">الأرقام</string>
+    <string name="tab_requests">الطلبات</string>
+    <string name="tab_protections">الحمايات</string>
+    <string name="tab_tasks">المهام</string>
+    <string name="tab_notifications">الإشعارات</string>
+    <string name="tab_more">المزيد</string>
 </resources>
