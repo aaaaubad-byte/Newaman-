@@ -1,0 +1,6199 @@
+{
+  "views": [
+    {
+      "viewname": "admin_all_protections",
+      "definition": " SELECT p.id,\n    p.request_id,\n    cn.customer_id,\n    p.customer_number_id,\n    u.full_name AS customer_name,\n    u.phone AS customer_phone,\n    pn.number,\n    pn.provider_id,\n    tp.name_ar AS provider_name,\n    p.package_price_snapshot,\n    p.package_duration_days_snapshot,\n    p.package_currency_snapshot,\n    p.starts_at,\n    p.expires_at,\n    p.status,\n    p.created_at\n   FROM ((((protections p\n     JOIN customer_numbers cn ON ((cn.id = p.customer_number_id)))\n     JOIN users u ON ((u.id = cn.customer_id)))\n     JOIN phone_numbers pn ON ((pn.id = cn.phone_number_id)))\n     JOIN telecom_providers tp ON ((tp.id = pn.provider_id)));",
+      "schemaname": "public"
+    },
+    {
+      "viewname": "admin_payment_tasks",
+      "definition": " WITH base AS (\n         SELECT pt.id,\n            pt.protection_id,\n            p.customer_number_id,\n            COALESCE(pt.provider_id, pn.provider_id) AS provider_id,\n            u.full_name AS customer_name,\n            pn.number,\n            tp.name_ar AS provider_name,\n            pt.task_type,\n            pt.due_date AS due_at,\n            COALESCE(pt.telecom_due_at, pt.due_date) AS telecom_due_at,\n            pt.status,\n            pt.completed_at,\n            pt.completed_by,\n            pt.telecom_reference,\n            pt.rescheduled_reason,\n            pt.scheduled_at,\n            pt.created_at,\n            pt.updated_at,\n            pt.amount_snapshot,\n            pt.amount_currency,\n            pt.cycle_number,\n            pt.visible_from,\n            pt.planned_due_at,\n            COALESCE(ts.visibility_days_before, 0) AS visibility_days_before,\n            (ceil((EXTRACT(epoch FROM (COALESCE(pt.telecom_due_at, pt.due_date) - now())) / 86400.0)))::integer AS days_remaining,\n            ((COALESCE(pt.telecom_due_at, pt.due_date) < now()) AND (pt.status = ANY (ARRAY['open'::task_status, 'due'::task_status]))) AS is_overdue,\n            ((COALESCE(pt.telecom_due_at, pt.due_date))::date = CURRENT_DATE) AS is_due_today,\n            ((pt.status = ANY (ARRAY['completed'::task_status, 'cancelled'::task_status])) OR (COALESCE(pt.telecom_due_at, pt.due_date) < now()) OR (pt.visible_from IS NULL) OR (pt.visible_from <= now())) AS is_visible_now,\n            (pt.status = ANY (ARRAY['open'::task_status, 'due'::task_status])) AS is_open,\n            (pt.status = 'completed'::task_status) AS is_completed,\n            (pt.status = 'cancelled'::task_status) AS is_cancelled,\n                CASE\n                    WHEN ((pt.status = ANY (ARRAY['open'::task_status, 'due'::task_status])) AND (COALESCE(pt.telecom_due_at, pt.due_date) < now())) THEN 'overdue'::text\n                    ELSE (pt.status)::text\n                END AS calculated_status,\n            cls.name AS classification_name,\n            cls.sort_order AS classification_sort_order\n           FROM (((((((payment_tasks pt\n             JOIN protections p ON ((p.id = pt.protection_id)))\n             JOIN customer_numbers cn ON ((cn.id = p.customer_number_id)))\n             JOIN users u ON ((u.id = cn.customer_id)))\n             JOIN phone_numbers pn ON ((pn.id = cn.phone_number_id)))\n             JOIN telecom_providers tp ON ((tp.id = COALESCE(pt.provider_id, pn.provider_id))))\n             LEFT JOIN task_settings ts ON (((ts.provider_id = COALESCE(pt.provider_id, pn.provider_id)) AND ts.is_active)))\n             LEFT JOIN LATERAL ( SELECT c.name,\n                    c.sort_order\n                   FROM task_time_classifications c\n                  WHERE ((c.task_settings_id = ts.id) AND c.is_active AND ((c.min_days_remaining IS NULL) OR ((ceil((EXTRACT(epoch FROM (COALESCE(pt.telecom_due_at, pt.due_date) - now())) / 86400.0)))::integer >= c.min_days_remaining)) AND ((c.max_days_remaining IS NULL) OR ((ceil((EXTRACT(epoch FROM (COALESCE(pt.telecom_due_at, pt.due_date) - now())) / 86400.0)))::integer <= c.max_days_remaining)))\n                  ORDER BY c.sort_order, c.id\n                 LIMIT 1) cls ON (true))\n        )\n SELECT id,\n    protection_id,\n    customer_number_id,\n    provider_id,\n    customer_name,\n    number,\n    provider_name,\n    task_type,\n    due_at,\n    telecom_due_at,\n    days_remaining,\n    calculated_status,\n    status,\n    completed_at,\n    completed_by,\n    telecom_reference,\n    rescheduled_reason,\n    scheduled_at,\n    created_at,\n    updated_at,\n    amount_snapshot,\n    amount_currency,\n    cycle_number,\n    visible_from,\n    planned_due_at,\n    visibility_days_before,\n    is_overdue,\n    is_due_today,\n    is_visible_now,\n    is_open,\n    is_completed,\n    is_cancelled,\n    classification_name,\n    classification_sort_order,\n        CASE\n            WHEN is_overdue THEN 0\n            WHEN is_due_today THEN 1\n            ELSE 2\n        END AS urgency_sort\n   FROM base b;",
+      "schemaname": "public"
+    },
+    {
+      "viewname": "customer_my_numbers",
+      "definition": " SELECT cn.id,\n    cn.customer_id,\n    cn.phone_number_id,\n    pn.number,\n    tp.id AS provider_id,\n    tp.name_ar AS provider_name_ar,\n    tp.name_en AS provider_name_en,\n    tp.code AS provider_code,\n    cn.custom_label,\n    cn.is_active,\n    cn.created_at,\n    p.id AS active_protection_id,\n    p.starts_at AS protection_starts_at,\n    p.expires_at AS protection_expires_at,\n    p.status AS protection_status\n   FROM (((customer_numbers cn\n     JOIN phone_numbers pn ON ((pn.id = cn.phone_number_id)))\n     JOIN telecom_providers tp ON ((tp.id = pn.provider_id)))\n     LEFT JOIN protections p ON (((p.customer_number_id = cn.id) AND (p.status = 'active'::protection_status))))\n  WHERE ((cn.customer_id = auth.uid()) OR (private.current_actor_type() = 'admin'::user_type));",
+      "schemaname": "public"
+    },
+    {
+      "viewname": "customer_my_protections",
+      "definition": " SELECT p.id,\n    p.request_id,\n    cn.customer_id,\n    p.customer_number_id,\n    pn.number,\n    tp.name_ar AS provider_name,\n    p.package_id,\n    pkg.name AS package_name,\n    p.package_price_snapshot,\n    p.package_duration_days_snapshot,\n    p.package_currency_snapshot,\n    p.starts_at,\n    p.expires_at,\n    p.status,\n    p.created_at\n   FROM ((((protections p\n     JOIN customer_numbers cn ON ((cn.id = p.customer_number_id)))\n     JOIN phone_numbers pn ON ((pn.id = cn.phone_number_id)))\n     JOIN telecom_providers tp ON ((tp.id = pn.provider_id)))\n     JOIN packages pkg ON ((pkg.id = p.package_id)))\n  WHERE (cn.customer_id = auth.uid());",
+      "schemaname": "public"
+    },
+    {
+      "viewname": "my_profile",
+      "definition": " SELECT id,\n    user_type,\n    full_name,\n    email,\n    phone,\n    status,\n    role_id,\n    created_at,\n    updated_at\n   FROM users\n  WHERE (id = auth.uid());",
+      "schemaname": "public"
+    }
+  ],
+  "columns": [
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_all_protections",
+      "column_name": "id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_all_protections",
+      "column_name": "request_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_all_protections",
+      "column_name": "customer_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_all_protections",
+      "column_name": "customer_number_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_all_protections",
+      "column_name": "customer_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_all_protections",
+      "column_name": "customer_phone",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_all_protections",
+      "column_name": "number",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_all_protections",
+      "column_name": "provider_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_all_protections",
+      "column_name": "provider_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "admin_all_protections",
+      "column_name": "package_price_snapshot",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "admin_all_protections",
+      "column_name": "package_duration_days_snapshot",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_all_protections",
+      "column_name": "package_currency_snapshot",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_all_protections",
+      "column_name": "starts_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 13
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_all_protections",
+      "column_name": "expires_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 14
+    },
+    {
+      "udt_name": "protection_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "admin_all_protections",
+      "column_name": "status",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 15
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_all_protections",
+      "column_name": "created_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 16
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_notifications",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_notifications",
+      "column_name": "title",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_notifications",
+      "column_name": "message",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_notifications",
+      "column_name": "type",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "admin_notifications",
+      "column_name": "is_read",
+      "is_nullable": "NO",
+      "column_default": "false",
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_notifications",
+      "column_name": "related_entity_type",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_notifications",
+      "column_name": "related_entity_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_notifications",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_payment_tasks",
+      "column_name": "id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_payment_tasks",
+      "column_name": "protection_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_payment_tasks",
+      "column_name": "customer_number_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_payment_tasks",
+      "column_name": "provider_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "customer_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "number",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "provider_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "task_type",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "due_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "telecom_due_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "admin_payment_tasks",
+      "column_name": "days_remaining",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "calculated_status",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "task_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "admin_payment_tasks",
+      "column_name": "status",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 13
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "completed_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 14
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "admin_payment_tasks",
+      "column_name": "completed_by",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 15
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "telecom_reference",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 16
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "rescheduled_reason",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 17
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "scheduled_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 18
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "created_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 19
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "updated_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 20
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "admin_payment_tasks",
+      "column_name": "amount_snapshot",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 21
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "amount_currency",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 22
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "admin_payment_tasks",
+      "column_name": "cycle_number",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 23
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "visible_from",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 24
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "admin_payment_tasks",
+      "column_name": "planned_due_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 25
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "admin_payment_tasks",
+      "column_name": "visibility_days_before",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 26
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "admin_payment_tasks",
+      "column_name": "is_overdue",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 27
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "admin_payment_tasks",
+      "column_name": "is_due_today",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 28
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "admin_payment_tasks",
+      "column_name": "is_visible_now",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 29
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "admin_payment_tasks",
+      "column_name": "is_open",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 30
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "admin_payment_tasks",
+      "column_name": "is_completed",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 31
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "admin_payment_tasks",
+      "column_name": "is_cancelled",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 32
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "admin_payment_tasks",
+      "column_name": "classification_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 33
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "admin_payment_tasks",
+      "column_name": "classification_sort_order",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 34
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "admin_payment_tasks",
+      "column_name": "urgency_sort",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 35
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "audit_logs",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "audit_logs",
+      "column_name": "actor_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "audit_action",
+      "data_type": "USER-DEFINED",
+      "table_name": "audit_logs",
+      "column_name": "action",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "audit_logs",
+      "column_name": "entity_type",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "audit_logs",
+      "column_name": "entity_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "jsonb",
+      "data_type": "jsonb",
+      "table_name": "audit_logs",
+      "column_name": "before_data",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "jsonb",
+      "data_type": "jsonb",
+      "table_name": "audit_logs",
+      "column_name": "after_data",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "inet",
+      "data_type": "inet",
+      "table_name": "audit_logs",
+      "column_name": "ip_address",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "audit_logs",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "client_notifications",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "client_notifications",
+      "column_name": "customer_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "client_notifications",
+      "column_name": "title",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "client_notifications",
+      "column_name": "message",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "client_notifications",
+      "column_name": "type",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "client_notifications",
+      "column_name": "is_read",
+      "is_nullable": "NO",
+      "column_default": "false",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "client_notifications",
+      "column_name": "related_entity_type",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "client_notifications",
+      "column_name": "related_entity_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "client_notifications",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_numbers",
+      "column_name": "id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_numbers",
+      "column_name": "customer_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_numbers",
+      "column_name": "phone_number_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_numbers",
+      "column_name": "number",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_numbers",
+      "column_name": "provider_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_numbers",
+      "column_name": "provider_name_ar",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_numbers",
+      "column_name": "provider_name_en",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_numbers",
+      "column_name": "provider_code",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_numbers",
+      "column_name": "custom_label",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "customer_my_numbers",
+      "column_name": "is_active",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_my_numbers",
+      "column_name": "created_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_numbers",
+      "column_name": "active_protection_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_my_numbers",
+      "column_name": "protection_starts_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 13
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_my_numbers",
+      "column_name": "protection_expires_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 14
+    },
+    {
+      "udt_name": "protection_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "customer_my_numbers",
+      "column_name": "protection_status",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 15
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_protections",
+      "column_name": "id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_protections",
+      "column_name": "request_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_protections",
+      "column_name": "customer_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_protections",
+      "column_name": "customer_number_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_protections",
+      "column_name": "number",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_protections",
+      "column_name": "provider_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_my_protections",
+      "column_name": "package_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_protections",
+      "column_name": "package_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "customer_my_protections",
+      "column_name": "package_price_snapshot",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "customer_my_protections",
+      "column_name": "package_duration_days_snapshot",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_my_protections",
+      "column_name": "package_currency_snapshot",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_my_protections",
+      "column_name": "starts_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_my_protections",
+      "column_name": "expires_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 13
+    },
+    {
+      "udt_name": "protection_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "customer_my_protections",
+      "column_name": "status",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 14
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_my_protections",
+      "column_name": "created_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 15
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_numbers",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_numbers",
+      "column_name": "customer_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "customer_numbers",
+      "column_name": "phone_number_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "customer_numbers",
+      "column_name": "custom_label",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "customer_numbers",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_numbers",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "customer_numbers",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "financial_transactions",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "transaction_type",
+      "data_type": "USER-DEFINED",
+      "table_name": "financial_transactions",
+      "column_name": "type",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "financial_transactions",
+      "column_name": "amount",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "financial_transactions",
+      "column_name": "currency",
+      "is_nullable": "NO",
+      "column_default": "'YER'::text",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "financial_transactions",
+      "column_name": "reference_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "financial_transactions",
+      "column_name": "notes",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "financial_transactions",
+      "column_name": "created_by",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "financial_transactions",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "manual_payment_logs",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "manual_payment_logs",
+      "column_name": "task_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "manual_payment_logs",
+      "column_name": "amount",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "manual_payment_logs",
+      "column_name": "telecom_reference",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "manual_payment_logs",
+      "column_name": "notes",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "manual_payment_logs",
+      "column_name": "logged_by",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "manual_payment_logs",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "my_profile",
+      "column_name": "id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "user_type",
+      "data_type": "USER-DEFINED",
+      "table_name": "my_profile",
+      "column_name": "user_type",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "my_profile",
+      "column_name": "full_name",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "my_profile",
+      "column_name": "email",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "my_profile",
+      "column_name": "phone",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "user_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "my_profile",
+      "column_name": "status",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "my_profile",
+      "column_name": "role_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "my_profile",
+      "column_name": "created_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "my_profile",
+      "column_name": "updated_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "notification_settings",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "notification_settings",
+      "column_name": "type",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "notification_recipient",
+      "data_type": "USER-DEFINED",
+      "table_name": "notification_settings",
+      "column_name": "recipient",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "notification_settings",
+      "column_name": "enabled",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "notification_settings",
+      "column_name": "days_before",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "notification_settings",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "notification_settings",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "packages",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "packages",
+      "column_name": "provider_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "packages",
+      "column_name": "name",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "packages",
+      "column_name": "duration_days",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "packages",
+      "column_name": "price",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "jsonb",
+      "data_type": "jsonb",
+      "table_name": "packages",
+      "column_name": "features",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "packages",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "packages",
+      "column_name": "sort_order",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "packages",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "packages",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "packages",
+      "column_name": "currency",
+      "is_nullable": "NO",
+      "column_default": "'YER'::text",
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "packages",
+      "column_name": "description",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "packages",
+      "column_name": "is_visible_to_customer",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 13
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "payment_methods",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "payment_method_type",
+      "data_type": "USER-DEFINED",
+      "table_name": "payment_methods",
+      "column_name": "type",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_methods",
+      "column_name": "name",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_methods",
+      "column_name": "account_number",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_methods",
+      "column_name": "account_name",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_methods",
+      "column_name": "instructions",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "payment_methods",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "payment_methods",
+      "column_name": "sort_order",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_methods",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_methods",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "payment_tasks",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "payment_tasks",
+      "column_name": "protection_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "due_date",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "task_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "payment_tasks",
+      "column_name": "status",
+      "is_nullable": "NO",
+      "column_default": "'open'::task_status",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "completed_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "payment_tasks",
+      "column_name": "completed_by",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_tasks",
+      "column_name": "telecom_reference",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_tasks",
+      "column_name": "rescheduled_reason",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_tasks",
+      "column_name": "task_type",
+      "is_nullable": "NO",
+      "column_default": "'recurring'::text",
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "payment_tasks",
+      "column_name": "provider_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "telecom_due_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 13
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "payment_tasks",
+      "column_name": "days_remaining",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 14
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "scheduled_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 15
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "payment_tasks",
+      "column_name": "cycle_number",
+      "is_nullable": "NO",
+      "column_default": "1",
+      "ordinal_position": 17
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "visible_from",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 18
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "payment_tasks",
+      "column_name": "planned_due_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 19
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "payment_tasks",
+      "column_name": "amount_snapshot",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 20
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "payment_tasks",
+      "column_name": "amount_currency",
+      "is_nullable": "NO",
+      "column_default": "'YER'::text",
+      "ordinal_position": 21
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "periodic_payment_plans",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "periodic_payment_plans",
+      "column_name": "protection_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "periodic_payment_plans",
+      "column_name": "interval_days",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "periodic_payment_plans",
+      "column_name": "next_due_date",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "periodic_payment_plans",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "periodic_payment_plans",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "periodic_payment_plans",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "permissions",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "permissions",
+      "column_name": "code",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "permissions",
+      "column_name": "name",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "permissions",
+      "column_name": "description",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "permissions",
+      "column_name": "module",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "permissions",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "phone_numbers",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "phone_numbers",
+      "column_name": "provider_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "phone_numbers",
+      "column_name": "number",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "phone_numbers",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_history",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_history",
+      "column_name": "protection_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protection_history",
+      "column_name": "event",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "jsonb",
+      "data_type": "jsonb",
+      "table_name": "protection_history",
+      "column_name": "event_details",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protection_history",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "customer_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "customer_number_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "package_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "payment_method_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protection_requests",
+      "column_name": "transfer_reference",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protection_requests",
+      "column_name": "idempotency_key",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "request_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "protection_requests",
+      "column_name": "status",
+      "is_nullable": "NO",
+      "column_default": "'pending_payment_verification'::request_status",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protection_requests",
+      "column_name": "rejection_reason",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protection_requests",
+      "column_name": "payment_verified_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "payment_verified_by",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protection_requests",
+      "column_name": "verified_note",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protection_requests",
+      "column_name": "reviewed_at",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 13
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "reviewed_by",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 14
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protection_requests",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 15
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protection_requests",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 16
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protection_requests",
+      "column_name": "request_type",
+      "is_nullable": "NO",
+      "column_default": "'new'::text",
+      "ordinal_position": 17
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protection_requests",
+      "column_name": "previous_protection_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 18
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "protection_requests",
+      "column_name": "price_snapshot",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 19
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "protection_requests",
+      "column_name": "duration_days_snapshot",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 20
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protection_requests",
+      "column_name": "currency_snapshot",
+      "is_nullable": "NO",
+      "column_default": "'YER'::text",
+      "ordinal_position": 21
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protections",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protections",
+      "column_name": "customer_number_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protections",
+      "column_name": "package_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "protections",
+      "column_name": "request_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protections",
+      "column_name": "starts_at",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protections",
+      "column_name": "expires_at",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "protection_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "protections",
+      "column_name": "status",
+      "is_nullable": "NO",
+      "column_default": "'active'::protection_status",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protections",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "protections",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "protections",
+      "column_name": "package_price_snapshot",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "protections",
+      "column_name": "package_duration_days_snapshot",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "protections",
+      "column_name": "package_currency_snapshot",
+      "is_nullable": "NO",
+      "column_default": "'YER'::text",
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "provider_prefixes",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "provider_prefixes",
+      "column_name": "provider_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "provider_prefixes",
+      "column_name": "prefix",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "provider_prefixes",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "provider_prefixes",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "role_permissions",
+      "column_name": "role_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "role_permissions",
+      "column_name": "permission_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "role_permissions",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "roles",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "roles",
+      "column_name": "name",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "roles",
+      "column_name": "description",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "roles",
+      "column_name": "is_system",
+      "is_nullable": "NO",
+      "column_default": "false",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "roles",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "roles",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "roles",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "system_settings",
+      "column_name": "key",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "jsonb",
+      "data_type": "jsonb",
+      "table_name": "system_settings",
+      "column_name": "value",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "system_settings",
+      "column_name": "description",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "system_settings",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "task_amount_settings",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "task_amount_settings",
+      "column_name": "provider_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "task_amount_settings",
+      "column_name": "task_type",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "numeric",
+      "data_type": "numeric",
+      "table_name": "task_amount_settings",
+      "column_name": "amount",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "task_amount_settings",
+      "column_name": "currency",
+      "is_nullable": "NO",
+      "column_default": "'YER'::text",
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "task_amount_settings",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "task_amount_settings",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "task_amount_settings",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "task_settings",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "task_settings",
+      "column_name": "default_interval_days",
+      "is_nullable": "NO",
+      "column_default": "30",
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "task_settings",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "task_settings",
+      "column_name": "provider_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "task_settings",
+      "column_name": "first_task_enabled",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "task_settings",
+      "column_name": "manual_reschedule_enabled",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "task_settings",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "task_settings",
+      "column_name": "visibility_days_before",
+      "is_nullable": "NO",
+      "column_default": "30",
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "task_time_classifications",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "task_time_classifications",
+      "column_name": "task_settings_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "task_time_classifications",
+      "column_name": "name",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "task_time_classifications",
+      "column_name": "min_days_remaining",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "task_time_classifications",
+      "column_name": "max_days_remaining",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "task_time_classifications",
+      "column_name": "sort_order",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "task_time_classifications",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "task_time_classifications",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "task_time_classifications",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "telecom_providers",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()",
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "telecom_providers",
+      "column_name": "name_ar",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "telecom_providers",
+      "column_name": "name_en",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "telecom_providers",
+      "column_name": "code",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "telecom_providers",
+      "column_name": "number_length",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "telecom_providers",
+      "column_name": "primary_color_hex",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "telecom_providers",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "int4",
+      "data_type": "integer",
+      "table_name": "telecom_providers",
+      "column_name": "sort_order",
+      "is_nullable": "NO",
+      "column_default": "0",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "telecom_providers",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "telecom_providers",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 10
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "telecom_providers",
+      "column_name": "logo_url",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 11
+    },
+    {
+      "udt_name": "bool",
+      "data_type": "boolean",
+      "table_name": "telecom_providers",
+      "column_name": "is_visible_to_customer",
+      "is_nullable": "NO",
+      "column_default": "true",
+      "ordinal_position": 12
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "transaction_numbers",
+      "column_name": "transaction_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "transaction_numbers",
+      "column_name": "customer_number_id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "users",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 1
+    },
+    {
+      "udt_name": "user_type",
+      "data_type": "USER-DEFINED",
+      "table_name": "users",
+      "column_name": "user_type",
+      "is_nullable": "NO",
+      "column_default": "'customer'::user_type",
+      "ordinal_position": 2
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "users",
+      "column_name": "full_name",
+      "is_nullable": "NO",
+      "column_default": null,
+      "ordinal_position": 3
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "users",
+      "column_name": "email",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 4
+    },
+    {
+      "udt_name": "text",
+      "data_type": "text",
+      "table_name": "users",
+      "column_name": "phone",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 5
+    },
+    {
+      "udt_name": "user_status",
+      "data_type": "USER-DEFINED",
+      "table_name": "users",
+      "column_name": "status",
+      "is_nullable": "NO",
+      "column_default": "'active'::user_status",
+      "ordinal_position": 6
+    },
+    {
+      "udt_name": "uuid",
+      "data_type": "uuid",
+      "table_name": "users",
+      "column_name": "role_id",
+      "is_nullable": "YES",
+      "column_default": null,
+      "ordinal_position": 7
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "users",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 8
+    },
+    {
+      "udt_name": "timestamptz",
+      "data_type": "timestamp with time zone",
+      "table_name": "users",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()",
+      "ordinal_position": 9
+    }
+  ],
+  "functions": [
+    {
+      "language": "plpgsql",
+      "arguments": "p_number text",
+      "result_type": "uuid",
+      "function_name": "add_customer_number",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_provider_id uuid, p_prefixes text[]",
+      "result_type": "integer",
+      "function_name": "admin_replace_provider_prefixes",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_role_id uuid, p_permission_codes text[]",
+      "result_type": "integer",
+      "function_name": "admin_replace_role_permissions",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_key text, p_value text",
+      "result_type": "boolean",
+      "function_name": "admin_set_system_setting",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_user_id uuid, p_role_id uuid",
+      "result_type": "boolean",
+      "function_name": "admin_set_user_role",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_user_id uuid, p_status user_status",
+      "result_type": "boolean",
+      "function_name": "admin_set_user_status",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_id uuid, p_type text, p_recipient text, p_enabled boolean, p_days_before integer",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_notification_setting",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_id uuid, p_provider_id uuid, p_name text, p_duration_days integer, p_price numeric, p_currency text, p_is_active boolean, p_sort_order integer, p_description text, p_is_visible_to_customer boolean",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_package",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_id uuid, p_type text, p_name text, p_recipient text, p_account text, p_instructions text, p_is_active boolean, p_sort_order integer",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_payment_method",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_id uuid, p_name text, p_code text, p_number_length integer, p_is_active boolean, p_sort_order integer, p_is_visible_to_customer boolean, p_logo_url text",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_provider",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_id uuid, p_provider_id uuid, p_prefix text, p_is_active boolean",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_provider_prefix",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_id uuid, p_provider_id uuid, p_task_type text, p_amount numeric, p_currency text, p_is_active boolean",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_task_amount_setting",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_id uuid, p_task_settings_id uuid, p_name text, p_min_days integer, p_max_days integer, p_sort_order integer, p_is_active boolean",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_task_classification",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_provider_id uuid, p_first_task_enabled boolean, p_manual_reschedule_enabled boolean, p_interval_days integer, p_visibility_days_before integer, p_is_active boolean",
+      "result_type": "uuid",
+      "function_name": "admin_upsert_task_settings",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_request_id uuid",
+      "result_type": "uuid",
+      "function_name": "approve_protection_request",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_request_id uuid",
+      "result_type": "uuid",
+      "function_name": "approve_renewal_request",
+      "security_definer": true
+    },
+    {
+      "language": "c",
+      "arguments": "bytea",
+      "result_type": "text",
+      "function_name": "armor",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text[], text[]",
+      "result_type": "text",
+      "function_name": "armor",
+      "security_definer": false
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_task_id uuid, p_reason text",
+      "result_type": "boolean",
+      "function_name": "cancel_payment_task",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_task_id uuid, p_telecom_ref text",
+      "result_type": "boolean",
+      "function_name": "complete_payment_task",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_provider_id uuid, p_task_type text, p_status text, p_from timestamp with time zone, p_to timestamp with time zone",
+      "result_type": "bigint",
+      "function_name": "count_admin_payment_tasks",
+      "security_definer": true
+    },
+    {
+      "language": "c",
+      "arguments": "text, text",
+      "result_type": "text",
+      "function_name": "crypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text",
+      "result_type": "bytea",
+      "function_name": "dearmor",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text",
+      "result_type": "bytea",
+      "function_name": "decrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, bytea, text",
+      "result_type": "bytea",
+      "function_name": "decrypt_iv",
+      "security_definer": false
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_phone text",
+      "result_type": "uuid",
+      "function_name": "detect_provider_id",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text",
+      "result_type": "bytea",
+      "function_name": "digest",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, text",
+      "result_type": "bytea",
+      "function_name": "digest",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text",
+      "result_type": "bytea",
+      "function_name": "encrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, bytea, text",
+      "result_type": "bytea",
+      "function_name": "encrypt_iv",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "integer",
+      "result_type": "bytea",
+      "function_name": "gen_random_bytes",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "gen_random_uuid",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text",
+      "result_type": "text",
+      "function_name": "gen_salt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, integer",
+      "result_type": "text",
+      "function_name": "gen_salt",
+      "security_definer": false
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "",
+      "result_type": "jsonb",
+      "function_name": "get_admin_dashboard_summary",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_provider_id uuid, p_task_type text, p_status text, p_from timestamp with time zone, p_to timestamp with time zone, p_sort text, p_desc boolean, p_limit integer, p_offset integer",
+      "result_type": "SETOF admin_payment_tasks",
+      "function_name": "get_admin_payment_tasks",
+      "security_definer": true
+    },
+    {
+      "language": "sql",
+      "arguments": "",
+      "result_type": "jsonb",
+      "function_name": "get_current_actor",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "",
+      "result_type": "trigger",
+      "function_name": "handle_auth_user_created",
+      "security_definer": true
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text",
+      "result_type": "bytea",
+      "function_name": "hmac",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, text, text",
+      "result_type": "bytea",
+      "function_name": "hmac",
+      "security_definer": false
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_raw text",
+      "result_type": "text",
+      "function_name": "normalize_phone",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, OUT key text, OUT value text",
+      "result_type": "SETOF record",
+      "function_name": "pgp_armor_headers",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea",
+      "result_type": "text",
+      "function_name": "pgp_key_id",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea",
+      "result_type": "text",
+      "function_name": "pgp_pub_decrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text",
+      "result_type": "text",
+      "function_name": "pgp_pub_decrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text, text",
+      "result_type": "text",
+      "function_name": "pgp_pub_decrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea",
+      "result_type": "bytea",
+      "function_name": "pgp_pub_decrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text",
+      "result_type": "bytea",
+      "function_name": "pgp_pub_decrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text, text",
+      "result_type": "bytea",
+      "function_name": "pgp_pub_decrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, bytea",
+      "result_type": "bytea",
+      "function_name": "pgp_pub_encrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, bytea, text",
+      "result_type": "bytea",
+      "function_name": "pgp_pub_encrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea",
+      "result_type": "bytea",
+      "function_name": "pgp_pub_encrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, bytea, text",
+      "result_type": "bytea",
+      "function_name": "pgp_pub_encrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text",
+      "result_type": "text",
+      "function_name": "pgp_sym_decrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text, text",
+      "result_type": "text",
+      "function_name": "pgp_sym_decrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text",
+      "result_type": "bytea",
+      "function_name": "pgp_sym_decrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text, text",
+      "result_type": "bytea",
+      "function_name": "pgp_sym_decrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, text",
+      "result_type": "bytea",
+      "function_name": "pgp_sym_encrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "text, text, text",
+      "result_type": "bytea",
+      "function_name": "pgp_sym_encrypt",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text",
+      "result_type": "bytea",
+      "function_name": "pgp_sym_encrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "bytea, text, text",
+      "result_type": "bytea",
+      "function_name": "pgp_sym_encrypt_bytea",
+      "security_definer": false
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_request_id uuid, p_rejection_reason text",
+      "result_type": "boolean",
+      "function_name": "reject_protection_request",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_task_id uuid, p_new_due_date timestamp with time zone, p_reason text",
+      "result_type": "boolean",
+      "function_name": "reschedule_payment_task",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_request_id uuid, p_package_id uuid, p_wallet_id uuid, p_transfer_ref text",
+      "result_type": "boolean",
+      "function_name": "resubmit_rejected_request",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_number_id uuid, p_package_id uuid, p_wallet_id uuid, p_transfer_ref text, p_idempotency_key text",
+      "result_type": "uuid",
+      "function_name": "submit_protection_request",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_protection_id uuid, p_package_id uuid, p_wallet_id uuid, p_transfer_ref text",
+      "result_type": "uuid",
+      "function_name": "submit_renewal_request",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_full_name text, p_email text",
+      "result_type": "boolean",
+      "function_name": "update_my_profile",
+      "security_definer": true
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_generate_v1",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_generate_v1mc",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "namespace uuid, name text",
+      "result_type": "uuid",
+      "function_name": "uuid_generate_v3",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_generate_v4",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "namespace uuid, name text",
+      "result_type": "uuid",
+      "function_name": "uuid_generate_v5",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_nil",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_ns_dns",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_ns_oid",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_ns_url",
+      "security_definer": false
+    },
+    {
+      "language": "c",
+      "arguments": "",
+      "result_type": "uuid",
+      "function_name": "uuid_ns_x500",
+      "security_definer": false
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_request_id uuid",
+      "result_type": "uuid",
+      "function_name": "verify_and_approve_protection_request",
+      "security_definer": true
+    },
+    {
+      "language": "plpgsql",
+      "arguments": "p_request_id uuid, p_verified boolean, p_note text",
+      "result_type": "boolean",
+      "function_name": "verify_request_payment",
+      "security_definer": true
+    }
+  ],
+  "enum_types": [
+    {
+      "type_name": "audit_action",
+      "enum_order": 1,
+      "enum_value": "add_customer_number"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 2,
+      "enum_value": "submit_protection_request"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 3,
+      "enum_value": "submit_renewal_request"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 4,
+      "enum_value": "resubmit_rejected_request"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 5,
+      "enum_value": "verify_payment"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 6,
+      "enum_value": "approve_protection_request"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 7,
+      "enum_value": "verify_and_approve_protection_request"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 8,
+      "enum_value": "reject_protection_request"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 9,
+      "enum_value": "approve_renewal_request"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 10,
+      "enum_value": "complete_payment_task"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 11,
+      "enum_value": "reschedule_payment_task"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 12,
+      "enum_value": "upsert_provider"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 13,
+      "enum_value": "upsert_provider_prefix"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 14,
+      "enum_value": "replace_provider_prefixes"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 15,
+      "enum_value": "upsert_package"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 16,
+      "enum_value": "upsert_payment_method"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 17,
+      "enum_value": "upsert_task_settings"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 18,
+      "enum_value": "upsert_task_classification"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 19,
+      "enum_value": "upsert_notification_setting"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 20,
+      "enum_value": "set_system_setting"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 21,
+      "enum_value": "update_my_profile"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 22,
+      "enum_value": "set_user_role"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 23,
+      "enum_value": "set_user_status"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 24,
+      "enum_value": "replace_role_permissions"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 25,
+      "enum_value": "system_maintenance"
+    },
+    {
+      "type_name": "audit_action",
+      "enum_order": 26,
+      "enum_value": "cancel_payment_task"
+    },
+    {
+      "type_name": "notification_recipient",
+      "enum_order": 1,
+      "enum_value": "customer"
+    },
+    {
+      "type_name": "notification_recipient",
+      "enum_order": 2,
+      "enum_value": "admin"
+    },
+    {
+      "type_name": "payment_method_type",
+      "enum_order": 1,
+      "enum_value": "wallet"
+    },
+    {
+      "type_name": "payment_method_type",
+      "enum_order": 2,
+      "enum_value": "bank"
+    },
+    {
+      "type_name": "payment_method_type",
+      "enum_order": 3,
+      "enum_value": "exchange"
+    },
+    {
+      "type_name": "protection_status",
+      "enum_order": 1,
+      "enum_value": "pending_activation"
+    },
+    {
+      "type_name": "protection_status",
+      "enum_order": 2,
+      "enum_value": "active"
+    },
+    {
+      "type_name": "protection_status",
+      "enum_order": 3,
+      "enum_value": "expired"
+    },
+    {
+      "type_name": "protection_status",
+      "enum_order": 4,
+      "enum_value": "renewed"
+    },
+    {
+      "type_name": "protection_status",
+      "enum_order": 5,
+      "enum_value": "cancelled"
+    },
+    {
+      "type_name": "request_status",
+      "enum_order": 1,
+      "enum_value": "pending_payment_verification"
+    },
+    {
+      "type_name": "request_status",
+      "enum_order": 2,
+      "enum_value": "under_review"
+    },
+    {
+      "type_name": "request_status",
+      "enum_order": 3,
+      "enum_value": "approved"
+    },
+    {
+      "type_name": "request_status",
+      "enum_order": 4,
+      "enum_value": "rejected"
+    },
+    {
+      "type_name": "task_status",
+      "enum_order": 1,
+      "enum_value": "due"
+    },
+    {
+      "type_name": "task_status",
+      "enum_order": 2,
+      "enum_value": "completed"
+    },
+    {
+      "type_name": "task_status",
+      "enum_order": 3,
+      "enum_value": "open"
+    },
+    {
+      "type_name": "task_status",
+      "enum_order": 4,
+      "enum_value": "cancelled"
+    },
+    {
+      "type_name": "transaction_type",
+      "enum_order": 1,
+      "enum_value": "customer_payment"
+    },
+    {
+      "type_name": "transaction_type",
+      "enum_order": 2,
+      "enum_value": "telecom_renewal_expense"
+    },
+    {
+      "type_name": "transaction_type",
+      "enum_order": 3,
+      "enum_value": "system_adjustment"
+    },
+    {
+      "type_name": "user_status",
+      "enum_order": 1,
+      "enum_value": "active"
+    },
+    {
+      "type_name": "user_status",
+      "enum_order": 2,
+      "enum_value": "suspended"
+    },
+    {
+      "type_name": "user_status",
+      "enum_order": 3,
+      "enum_value": "disabled"
+    },
+    {
+      "type_name": "user_type",
+      "enum_order": 1,
+      "enum_value": "customer"
+    },
+    {
+      "type_name": "user_type",
+      "enum_order": 2,
+      "enum_value": "admin"
+    }
+  ],
+  "project_id": "ilhgwludktlktzwxryhs",
+  "constraints": [
+    {
+      "table_name": "admin_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18785_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "admin_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18785_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "admin_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18785_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "admin_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18785_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "admin_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18785_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "admin_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18785_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "admin_notifications",
+      "column_name": "id",
+      "constraint_name": "admin_notifications_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "admin_notifications",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "audit_logs",
+      "column_name": null,
+      "constraint_name": "18208_18796_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "audit_logs",
+      "column_name": null,
+      "constraint_name": "18208_18796_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "audit_logs",
+      "column_name": null,
+      "constraint_name": "18208_18796_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "audit_logs",
+      "column_name": null,
+      "constraint_name": "18208_18796_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "audit_logs",
+      "column_name": "actor_id",
+      "constraint_name": "audit_logs_actor_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "audit_logs",
+      "column_name": "id",
+      "constraint_name": "audit_logs_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "audit_logs",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18769_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18769_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18769_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18769_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18769_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18769_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": null,
+      "constraint_name": "18208_18769_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": "customer_id",
+      "constraint_name": "client_notifications_customer_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "client_notifications",
+      "column_name": "id",
+      "constraint_name": "client_notifications_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "client_notifications",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18531_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18531_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18531_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18531_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18531_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18531_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": "customer_id",
+      "constraint_name": "customer_numbers_customer_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": "phone_number_id",
+      "constraint_name": "customer_numbers_phone_number_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "phone_numbers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": "id",
+      "constraint_name": "customer_numbers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": "customer_id",
+      "constraint_name": "customer_numbers_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "customer_id"
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": "customer_id",
+      "constraint_name": "customer_numbers_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "phone_number_id"
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": "phone_number_id",
+      "constraint_name": "customer_numbers_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "customer_id"
+    },
+    {
+      "table_name": "customer_numbers",
+      "column_name": "phone_number_id",
+      "constraint_name": "customer_numbers_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "phone_number_id"
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": null,
+      "constraint_name": "18208_18678_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": null,
+      "constraint_name": "18208_18678_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": null,
+      "constraint_name": "18208_18678_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": null,
+      "constraint_name": "18208_18678_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": null,
+      "constraint_name": "18208_18678_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": null,
+      "constraint_name": "financial_transactions_amount_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "financial_transactions",
+      "foreign_column_name": "amount"
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": "created_by",
+      "constraint_name": "financial_transactions_created_by_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "financial_transactions",
+      "column_name": "id",
+      "constraint_name": "financial_transactions_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "financial_transactions",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": null,
+      "constraint_name": "18208_18709_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": null,
+      "constraint_name": "18208_18709_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": null,
+      "constraint_name": "18208_18709_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": null,
+      "constraint_name": "18208_18709_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": null,
+      "constraint_name": "18208_18709_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": null,
+      "constraint_name": "18208_18709_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": "logged_by",
+      "constraint_name": "manual_payment_logs_logged_by_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": "id",
+      "constraint_name": "manual_payment_logs_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "manual_payment_logs",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "column_name": "task_id",
+      "constraint_name": "manual_payment_logs_task_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "payment_tasks",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "18208_19176_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "18208_19176_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "18208_19176_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "18208_19176_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "18208_19176_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "18208_19176_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "notification_settings_days_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "notification_settings",
+      "foreign_column_name": "days_before"
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": "id",
+      "constraint_name": "notification_settings_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "notification_settings",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": null,
+      "constraint_name": "notification_settings_type_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "notification_settings",
+      "foreign_column_name": "type"
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": "recipient",
+      "constraint_name": "notification_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "notification_settings",
+      "foreign_column_name": "type"
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": "recipient",
+      "constraint_name": "notification_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "notification_settings",
+      "foreign_column_name": "recipient"
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": "type",
+      "constraint_name": "notification_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "notification_settings",
+      "foreign_column_name": "type"
+    },
+    {
+      "table_name": "notification_settings",
+      "column_name": "type",
+      "constraint_name": "notification_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "notification_settings",
+      "foreign_column_name": "recipient"
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_10_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_11_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_13_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "18208_18483_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "packages_duration_days_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "packages",
+      "foreign_column_name": "duration_days"
+    },
+    {
+      "table_name": "packages",
+      "column_name": "id",
+      "constraint_name": "packages_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "packages",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "packages",
+      "column_name": null,
+      "constraint_name": "packages_price_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "packages",
+      "foreign_column_name": "price"
+    },
+    {
+      "table_name": "packages",
+      "column_name": "provider_id",
+      "constraint_name": "packages_provider_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_10_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": null,
+      "constraint_name": "18208_18502_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_methods",
+      "column_name": "id",
+      "constraint_name": "payment_methods_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "payment_methods",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_10_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_11_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_17_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_20_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_21_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "18208_18656_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "payment_tasks_amount_snapshot_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "payment_tasks",
+      "foreign_column_name": "amount_snapshot"
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": null,
+      "constraint_name": "payment_tasks_amount_snapshot_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "payment_tasks",
+      "foreign_column_name": "amount_currency"
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": "completed_by",
+      "constraint_name": "payment_tasks_completed_by_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": "id",
+      "constraint_name": "payment_tasks_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "payment_tasks",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": "protection_id",
+      "constraint_name": "payment_tasks_protection_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "payment_tasks",
+      "column_name": "provider_id",
+      "constraint_name": "payment_tasks_provider_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "18208_18641_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "18208_18641_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "18208_18641_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "18208_18641_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "18208_18641_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "18208_18641_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "18208_18641_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": null,
+      "constraint_name": "periodic_payment_plans_interval_days_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "periodic_payment_plans",
+      "foreign_column_name": "interval_days"
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": "id",
+      "constraint_name": "periodic_payment_plans_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "periodic_payment_plans",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "column_name": "protection_id",
+      "constraint_name": "periodic_payment_plans_protection_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "permissions",
+      "column_name": null,
+      "constraint_name": "18208_18387_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "permissions",
+      "column_name": null,
+      "constraint_name": "18208_18387_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "permissions",
+      "column_name": null,
+      "constraint_name": "18208_18387_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "permissions",
+      "column_name": null,
+      "constraint_name": "18208_18387_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "permissions",
+      "column_name": null,
+      "constraint_name": "18208_18387_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "permissions",
+      "column_name": "code",
+      "constraint_name": "permissions_code_key",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "permissions",
+      "foreign_column_name": "code"
+    },
+    {
+      "table_name": "permissions",
+      "column_name": "id",
+      "constraint_name": "permissions_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "permissions",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18514_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18514_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18514_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18514_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": null,
+      "constraint_name": "phone_numbers_number_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "phone_numbers",
+      "foreign_column_name": "number"
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": "number",
+      "constraint_name": "phone_numbers_number_key",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "phone_numbers",
+      "foreign_column_name": "number"
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": "id",
+      "constraint_name": "phone_numbers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "phone_numbers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "phone_numbers",
+      "column_name": "provider_id",
+      "constraint_name": "phone_numbers_provider_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_history",
+      "column_name": null,
+      "constraint_name": "18208_18627_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_history",
+      "column_name": null,
+      "constraint_name": "18208_18627_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_history",
+      "column_name": null,
+      "constraint_name": "18208_18627_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_history",
+      "column_name": null,
+      "constraint_name": "18208_18627_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_history",
+      "column_name": "id",
+      "constraint_name": "protection_history_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "protection_history",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_history",
+      "column_name": "protection_id",
+      "constraint_name": "protection_history_protection_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_15_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_16_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_17_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_19_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_20_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_21_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "18208_18555_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "customer_id",
+      "constraint_name": "protection_requests_customer_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "customer_number_id",
+      "constraint_name": "protection_requests_customer_number_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "idempotency_key",
+      "constraint_name": "protection_requests_idempotency_key_key",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "protection_requests",
+      "foreign_column_name": "idempotency_key"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "package_id",
+      "constraint_name": "protection_requests_package_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "packages",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "payment_method_id",
+      "constraint_name": "protection_requests_payment_method_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "payment_methods",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "payment_verified_by",
+      "constraint_name": "protection_requests_payment_verified_by_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "id",
+      "constraint_name": "protection_requests_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "protection_requests",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "previous_protection_id",
+      "constraint_name": "protection_requests_previous_protection_fk",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "protection_requests_request_type_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protection_requests",
+      "foreign_column_name": "request_type"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": "reviewed_by",
+      "constraint_name": "protection_requests_reviewed_by_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "protection_requests_snapshot_values_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protection_requests",
+      "foreign_column_name": "duration_days_snapshot"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "protection_requests_snapshot_values_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protection_requests",
+      "foreign_column_name": "currency_snapshot"
+    },
+    {
+      "table_name": "protection_requests",
+      "column_name": null,
+      "constraint_name": "protection_requests_snapshot_values_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protection_requests",
+      "foreign_column_name": "price_snapshot"
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_10_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_11_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_12_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "18208_18600_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "chk_protection_dates",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "expires_at"
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "chk_protection_dates",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "starts_at"
+    },
+    {
+      "table_name": "protections",
+      "column_name": "customer_number_id",
+      "constraint_name": "protections_customer_number_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protections",
+      "column_name": "package_id",
+      "constraint_name": "protections_package_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "packages",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protections",
+      "column_name": "id",
+      "constraint_name": "protections_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protections",
+      "column_name": "request_id",
+      "constraint_name": "protections_request_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "protection_requests",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "protections_snapshot_values_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "package_currency_snapshot"
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "protections_snapshot_values_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "package_price_snapshot"
+    },
+    {
+      "table_name": "protections",
+      "column_name": null,
+      "constraint_name": "protections_snapshot_values_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "protections",
+      "foreign_column_name": "package_duration_days_snapshot"
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": null,
+      "constraint_name": "18208_18465_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": null,
+      "constraint_name": "18208_18465_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": null,
+      "constraint_name": "18208_18465_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": null,
+      "constraint_name": "18208_18465_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": null,
+      "constraint_name": "18208_18465_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": "provider_id",
+      "constraint_name": "provider_prefix_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "provider_prefixes",
+      "foreign_column_name": "provider_id"
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": "provider_id",
+      "constraint_name": "provider_prefix_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "provider_prefixes",
+      "foreign_column_name": "prefix"
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": "prefix",
+      "constraint_name": "provider_prefix_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "provider_prefixes",
+      "foreign_column_name": "prefix"
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": "prefix",
+      "constraint_name": "provider_prefix_uniq",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "provider_prefixes",
+      "foreign_column_name": "provider_id"
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": "id",
+      "constraint_name": "provider_prefixes_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "provider_prefixes",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "provider_prefixes",
+      "column_name": "provider_id",
+      "constraint_name": "provider_prefixes_provider_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": null,
+      "constraint_name": "18208_18398_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": null,
+      "constraint_name": "18208_18398_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": null,
+      "constraint_name": "18208_18398_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": "permission_id",
+      "constraint_name": "role_permissions_permission_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "permissions",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": "permission_id",
+      "constraint_name": "role_permissions_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "role_permissions",
+      "foreign_column_name": "role_id"
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": "permission_id",
+      "constraint_name": "role_permissions_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "role_permissions",
+      "foreign_column_name": "permission_id"
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": "role_id",
+      "constraint_name": "role_permissions_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "role_permissions",
+      "foreign_column_name": "role_id"
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": "role_id",
+      "constraint_name": "role_permissions_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "role_permissions",
+      "foreign_column_name": "permission_id"
+    },
+    {
+      "table_name": "role_permissions",
+      "column_name": "role_id",
+      "constraint_name": "role_permissions_role_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "roles",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "roles",
+      "column_name": null,
+      "constraint_name": "18208_18373_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "roles",
+      "column_name": null,
+      "constraint_name": "18208_18373_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "roles",
+      "column_name": null,
+      "constraint_name": "18208_18373_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "roles",
+      "column_name": null,
+      "constraint_name": "18208_18373_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "roles",
+      "column_name": null,
+      "constraint_name": "18208_18373_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "roles",
+      "column_name": null,
+      "constraint_name": "18208_18373_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "roles",
+      "column_name": "name",
+      "constraint_name": "roles_name_key",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "roles",
+      "foreign_column_name": "name"
+    },
+    {
+      "table_name": "roles",
+      "column_name": "id",
+      "constraint_name": "roles_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "roles",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "system_settings",
+      "column_name": null,
+      "constraint_name": "18208_18414_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "system_settings",
+      "column_name": null,
+      "constraint_name": "18208_18414_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "system_settings",
+      "column_name": null,
+      "constraint_name": "18208_18414_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "system_settings",
+      "column_name": "key",
+      "constraint_name": "system_settings_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "system_settings",
+      "foreign_column_name": "key"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "18208_19217_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "task_amount_settings_amount_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "amount"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "task_amount_settings_currency_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "currency"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": "id",
+      "constraint_name": "task_amount_settings_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": "provider_id",
+      "constraint_name": "task_amount_settings_provider_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": null,
+      "constraint_name": "task_amount_settings_type_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "task_type"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": "task_type",
+      "constraint_name": "task_amount_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "task_type"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": "provider_id",
+      "constraint_name": "task_amount_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "provider_id"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": "task_type",
+      "constraint_name": "task_amount_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "provider_id"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "column_name": "provider_id",
+      "constraint_name": "task_amount_settings_unique_ck",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "task_amount_settings",
+      "foreign_column_name": "task_type"
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_10_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_11_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "18208_18728_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "task_settings_default_interval_days_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_settings",
+      "foreign_column_name": "default_interval_days"
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": "id",
+      "constraint_name": "task_settings_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "task_settings",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": "provider_id",
+      "constraint_name": "task_settings_provider_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "task_settings",
+      "column_name": null,
+      "constraint_name": "task_settings_visibility_days_before_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_settings",
+      "foreign_column_name": "visibility_days_before"
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "18208_19157_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "18208_19157_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "18208_19157_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "18208_19157_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "18208_19157_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "18208_19157_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "18208_19157_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "task_time_classifications_name_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_time_classifications",
+      "foreign_column_name": "name"
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": "id",
+      "constraint_name": "task_time_classifications_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "task_time_classifications",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "task_time_classifications_range_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_time_classifications",
+      "foreign_column_name": "max_days_remaining"
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": null,
+      "constraint_name": "task_time_classifications_range_ck",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "task_time_classifications",
+      "foreign_column_name": "min_days_remaining"
+    },
+    {
+      "table_name": "task_time_classifications",
+      "column_name": "task_settings_id",
+      "constraint_name": "task_time_classifications_task_settings_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "task_settings",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_10_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_12_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_4_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_5_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_7_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "18208_18450_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": "code",
+      "constraint_name": "telecom_providers_code_key",
+      "constraint_type": "UNIQUE",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "code"
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": null,
+      "constraint_name": "telecom_providers_number_length_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "number_length"
+    },
+    {
+      "table_name": "telecom_providers",
+      "column_name": "id",
+      "constraint_name": "telecom_providers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "telecom_providers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18694_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": null,
+      "constraint_name": "18208_18694_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": "customer_number_id",
+      "constraint_name": "transaction_numbers_customer_number_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "customer_numbers",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": "customer_number_id",
+      "constraint_name": "transaction_numbers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "transaction_numbers",
+      "foreign_column_name": "transaction_id"
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": "transaction_id",
+      "constraint_name": "transaction_numbers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "transaction_numbers",
+      "foreign_column_name": "customer_number_id"
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": "transaction_id",
+      "constraint_name": "transaction_numbers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "transaction_numbers",
+      "foreign_column_name": "transaction_id"
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": "customer_number_id",
+      "constraint_name": "transaction_numbers_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "transaction_numbers",
+      "foreign_column_name": "customer_number_id"
+    },
+    {
+      "table_name": "transaction_numbers",
+      "column_name": "transaction_id",
+      "constraint_name": "transaction_numbers_transaction_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "financial_transactions",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "18208_18422_1_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "18208_18422_2_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "18208_18422_3_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "18208_18422_6_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "18208_18422_8_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "18208_18422_9_not_null",
+      "constraint_type": "CHECK",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "chk_admin_requires_role",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "users",
+      "foreign_column_name": "role_id"
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "chk_admin_requires_role",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "users",
+      "foreign_column_name": "user_type"
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "users_full_name_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "users",
+      "foreign_column_name": "full_name"
+    },
+    {
+      "table_name": "users",
+      "column_name": "id",
+      "constraint_name": "users_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": null,
+      "foreign_column_name": null
+    },
+    {
+      "table_name": "users",
+      "column_name": null,
+      "constraint_name": "users_phone_check",
+      "constraint_type": "CHECK",
+      "foreign_table_name": "users",
+      "foreign_column_name": "phone"
+    },
+    {
+      "table_name": "users",
+      "column_name": "id",
+      "constraint_name": "users_pkey",
+      "constraint_type": "PRIMARY KEY",
+      "foreign_table_name": "users",
+      "foreign_column_name": "id"
+    },
+    {
+      "table_name": "users",
+      "column_name": "role_id",
+      "constraint_name": "users_role_id_fkey",
+      "constraint_type": "FOREIGN KEY",
+      "foreign_table_name": "roles",
+      "foreign_column_name": "id"
+    }
+  ],
+  "generated_at": "2026-09-21T00:08:01.501112+00:00",
+  "tables_and_views": [
+    {
+      "table_name": "admin_notifications",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "audit_logs",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "client_notifications",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "customer_numbers",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "financial_transactions",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "manual_payment_logs",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "notification_settings",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "packages",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "payment_methods",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "payment_tasks",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "periodic_payment_plans",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "permissions",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "phone_numbers",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "protection_history",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "protection_requests",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "protections",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "provider_prefixes",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "role_permissions",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "roles",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "system_settings",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "task_amount_settings",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "task_settings",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "task_time_classifications",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "telecom_providers",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "transaction_numbers",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "users",
+      "table_type": "BASE TABLE"
+    },
+    {
+      "table_name": "admin_all_protections",
+      "table_type": "VIEW"
+    },
+    {
+      "table_name": "admin_payment_tasks",
+      "table_type": "VIEW"
+    },
+    {
+      "table_name": "customer_my_numbers",
+      "table_type": "VIEW"
+    },
+    {
+      "table_name": "customer_my_protections",
+      "table_type": "VIEW"
+    },
+    {
+      "table_name": "my_profile",
+      "table_type": "VIEW"
+    }
+  ],
+  "source": {
+    "provider": "Supabase MCP",
+    "project_ref": "ilhgwludktlktzwxryhs",
+    "scope": "public schema metadata only; no application row data"
+  },
+  "migrations": [
+    {
+      "version": "20260918002320",
+      "name": "enforce_provider_specific_task_settings"
+    },
+    {
+      "version": "20260918025525",
+      "name": "secure_admin_views_and_public_rpc_execution"
+    },
+    {
+      "version": "20260918025657",
+      "name": "restrict_admin_protections_view_to_admin_actor"
+    },
+    {
+      "version": "20260918030813",
+      "name": "finish_production_contract_security_fixes"
+    },
+    {
+      "version": "20260918030902",
+      "name": "harden_public_rpc_grants_and_rls_initplans"
+    },
+    {
+      "version": "20260918035254",
+      "name": "remove_legacy_task_settings_and_classifications"
+    },
+    {
+      "version": "20260918035324",
+      "name": "remove_legacy_notification_settings"
+    },
+    {
+      "version": "20260918040020",
+      "name": "fix_admin_protection_request_link_and_initial_task"
+    },
+    {
+      "version": "20260918222453",
+      "name": "grant_authenticated_admin_view_select"
+    },
+    {
+      "version": "20260920010356",
+      "name": "phase1_task_status_enum"
+    },
+    {
+      "version": "20260920010405",
+      "name": "phase1_contracts_security"
+    },
+    {
+      "version": "20260920010445",
+      "name": "phase1_security_contract_correction"
+    },
+    {
+      "version": "20260920010537",
+      "name": "phase1_task_amount_settings"
+    },
+    {
+      "version": "20260920010741",
+      "name": "phase2_protection_renewal_hardening"
+    },
+    {
+      "version": "20260920011106",
+      "name": "phase3_audit_enum"
+    },
+    {
+      "version": "20260920011115",
+      "name": "phase3_tasks_financial_processing"
+    },
+    {
+      "version": "20260920011206",
+      "name": "phase3_legacy_reconciliation"
+    },
+    {
+      "version": "20260920011716",
+      "name": "phase4_task_views_filters"
+    },
+    {
+      "version": "20260920174240",
+      "name": "correct_live_contract_gaps"
+    },
+    {
+      "version": "20260920175109",
+      "name": "manage_catalog_visibility"
+    },
+    {
+      "version": "20260920175131",
+      "name": "fix_provider_name_en"
+    },
+    {
+      "version": "20260920180638",
+      "name": "cross_customer_protection_lock"
+    },
+    {
+      "version": "20260920234823",
+      "name": "repair_p0_aman_core_compat"
+    },
+    {
+      "version": "20260920235059",
+      "name": "repair_p0_aman_core_latest_compat"
+    }
+  ]
+}
