@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AssignmentTurnedIn
@@ -80,6 +81,7 @@ import com.example.data.model.RequestStatus
 import com.example.data.model.SystemSettings
 import com.example.data.model.TaskStatus
 import com.example.data.model.TaskClassification
+import com.example.data.model.TaskTimeClassification
 import com.example.data.model.TelecomProvider
 import com.example.data.model.User
 import com.example.data.model.UserType

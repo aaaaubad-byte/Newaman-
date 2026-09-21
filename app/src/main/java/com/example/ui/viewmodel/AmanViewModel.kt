@@ -20,6 +20,7 @@ import com.example.data.model.ProtectionPackage
 import com.example.data.model.StateTransitionLog
 import com.example.data.model.TaskSettings
 import com.example.data.model.TaskClassification
+import com.example.data.model.TaskAmountSetting
 import com.example.data.model.NotificationSetting
 import com.example.data.model.EmployeeAccount
 import com.example.data.model.SystemSettings
