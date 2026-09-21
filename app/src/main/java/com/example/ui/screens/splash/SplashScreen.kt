@@ -43,8 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.AmanDarkSlate
+import com.example.ui.theme.AmanTealAccent
 import com.example.ui.theme.AmanTealDark
 import com.example.ui.theme.AmanTealLight
+import com.example.ui.theme.AmanTealPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.R
 
@@ -55,16 +57,19 @@ fun AmanSplashScreen(
     modifier: Modifier = Modifier
 ) {
     var started by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         started = true
         kotlinx.coroutines.delay(2500)
         onFinished()
     }
+
     val iconScale by animateFloatAsState(
         targetValue = if (started) 1f else 0.78f,
         animationSpec = tween(850, easing = FastOutSlowInEasing),
         label = "aman_logo_scale"
     )
+
     val pulse by rememberInfiniteTransition(label = "aman_pulse").animateFloat(
         initialValue = 0.92f,
         targetValue = 1.08f,
@@ -74,16 +79,19 @@ fun AmanSplashScreen(
 
     Box(
         modifier = modifier.fillMaxSize().background(
-            Brush.linearGradient(listOf(Color(0xFF007F72), Color(0xFF005A58), Color(0xFF003F46)))
+            Brush.verticalGradient(
+                listOf(AmanTealDark, AmanTealPrimary, Color(0xFF0F2624))
+            )
         ),
         contentAlignment = Alignment.Center
     ) {
-        Box(Modifier.size(300.dp).graphicsLayer { alpha = 0.11f; scaleX = pulse; scaleY = pulse }.clip(CircleShape).background(AmanTealLight))
+        Box(Modifier.size(300.dp).graphicsLayer { alpha = 0.12f; scaleX = pulse; scaleY = pulse }.clip(CircleShape).background(AmanTealLight))
         Box(
             modifier = Modifier.fillMaxSize().background(
-                Brush.verticalGradient(listOf(Color.Transparent, Color(0xFF002F39).copy(alpha = 0.48f)))
+                Brush.verticalGradient(listOf(Color.Transparent, AmanDarkSlate.copy(alpha = 0.45f)))
             )
         )
+
         Column(
             modifier = Modifier.fillMaxWidth().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -95,16 +103,18 @@ fun AmanSplashScreen(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(128.dp).graphicsLayer { scaleX = iconScale; scaleY = iconScale }.clip(RoundedCornerShape(36.dp))
             )
+
             Spacer(Modifier.height(18.dp))
+
             AnimatedVisibility(visible = started, enter = fadeIn(tween(550)) + scaleIn(tween(550))) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("AMAN | أمان", fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
                     Spacer(Modifier.height(4.dp))
-                    Text("أمان حماية وضمان", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE0FFFA))
+                    Text("أمان حماية وضمان", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = AmanTealAccent)
                     Spacer(Modifier.height(16.dp))
-                    Text(if (isReturningUser) "أهلاً بعودتك" else "حماية وضمان لرقمك", fontSize = 12.sp, color = Color(0xFFB7EEE6))
+                    Text(if (isReturningUser) "أهلاً بعودتك" else "حماية وضمان لرقمك", fontSize = 12.sp, color = Color(0xFFE9F8F5))
                     Spacer(Modifier.height(28.dp))
-                    Box(Modifier.width(72.dp).height(2.dp).background(AmanTealLight, RoundedCornerShape(2.dp)))
+                    Box(Modifier.width(72.dp).height(2.dp).background(AmanTealAccent, RoundedCornerShape(2.dp)))
                 }
             }
         }
